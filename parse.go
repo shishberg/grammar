@@ -17,10 +17,8 @@ func Parse(source string) (*Grammar, error) {
 	return p.run()
 }
 
-// parser walks the source line-by-line. The grammar is line-oriented
-// (rule headers, forms decl, entries are each one line each), so a
-// recursive-descent tokeniser would be overkill — we strip comments and
-// indentation, then dispatch on the first word.
+// parser walks the source line-by-line. The grammar is line-oriented:
+// rule headers, the forms declaration, and entries are each one line.
 type parser struct {
 	grammar *Grammar
 	lines   []sourceLine

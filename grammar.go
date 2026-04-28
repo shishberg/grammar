@@ -7,7 +7,9 @@ package grammar
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 )
 
 // Sentinel errors. Callers can match these with errors.Is to distinguish
@@ -134,16 +136,21 @@ func (SelfRef) token() {}
 // rule declares that form. Errors wrap ErrUndefinedRule or
 // ErrUnknownForm so callers can match them with errors.Is.
 //
-// Parse only enforces structural correctness inside the source it
-// sees, so a file with a forward reference to a rule defined in a
-// sibling file Parses successfully. Call Validate after Merging or
-// AddRule-ing all the pieces of a grammar together, before Generate.
-// Generate itself still rejects an unresolved reference at expansion
-// time, so Validate is optional — but calling it surfaces the error
-// up front rather than only on the unlucky generation that happens to
-// pick the broken alternative.
+// Parse, Merge, and AddRule only enforce structural correctness; none
+// of them resolve cross-rule references. A grammar assembled from a
+// forward reference, a sibling-file reference, or a programmatically
+// added rule that names a not-yet-added target will pass through all
+// three without complaint. Call Validate after the grammar is fully
+// assembled and before Generate. Generate itself rejects an
+// unresolved reference at expansion time, so Validate is optional —
+// but calling it surfaces the error up front rather than only on the
+// unlucky generation that happens to pick the broken alternative.
+//
+// Rule names are visited in sorted order so the first error reported
+// for a given grammar is stable across calls.
 func (g *Grammar) Validate() error {
-	for name, r := range g.rules {
+	for _, name := range slices.Sorted(maps.Keys(g.rules)) {
+		r := g.rules[name]
 		for _, alt := range r.Alternatives {
 			for _, tpl := range alt.Forms {
 				if err := g.validateTemplateRefs(name, tpl); err != nil {
@@ -190,12 +197,14 @@ func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
 // Merge adds the rules of other into g. When both grammars define a
 // rule with the same name, the two definitions are combined provided
 // their form schemes match: same form names in the same order, with
-// structurally equal form-default templates. The combined rule's
-// alternatives are g's alternatives followed by other's, in source
-// order, with weights preserved.
+// structurally equal form-default templates (nil and empty templates
+// compare equal). The combined rule's alternatives are g's alternatives
+// followed by other's, in source order, with weights preserved.
 //
 // A name collision with mismatched form schemes wraps
-// ErrFormSchemeMismatch. Merge(nil) is a no-op.
+// ErrFormSchemeMismatch. Merge(nil) is a no-op. Merge does not retain
+// references to other's *Rule values: rules added to g are copied so
+// later mutations to other (or to g) don't bleed across.
 func (g *Grammar) Merge(other *Grammar) error {
 	if other == nil || len(other.rules) == 0 {
 		return nil
@@ -206,22 +215,31 @@ func (g *Grammar) Merge(other *Grammar) error {
 	for name, r := range other.rules {
 		existing, exists := g.rules[name]
 		if !exists {
-			g.rules[name] = r
+			g.rules[name] = cloneRule(r)
 			continue
 		}
 		if !formSchemesMatch(existing.Forms, r.Forms) {
-			return fmt.Errorf("%w: rule %q", ErrFormSchemeMismatch, name)
+			return fmt.Errorf("%w: %q", ErrFormSchemeMismatch, name)
 		}
 		existing.Alternatives = append(existing.Alternatives, r.Alternatives...)
 	}
 	return nil
 }
 
+// cloneRule returns a shallow copy of r with its Alternatives slice
+// duplicated, so callers that later append to either copy's
+// Alternatives don't disturb the other.
+func cloneRule(r *Rule) *Rule {
+	out := *r
+	out.Alternatives = slices.Clone(r.Alternatives)
+	return &out
+}
+
 // formSchemesMatch reports whether two Forms slices declare the same
 // form names in the same order with structurally equal form-default
-// templates. reflect.DeepEqual handles both the slice-equality and
-// the nil-vs-empty case (the default form's Default is nil on both
-// sides of any matching pair).
+// templates. A nil Template and an empty Template{} compare equal —
+// both encode "no default template" and reflect.DeepEqual would
+// otherwise distinguish them.
 func formSchemesMatch(a, b []FormSpec) bool {
 	if len(a) != len(b) {
 		return false
@@ -230,9 +248,16 @@ func formSchemesMatch(a, b []FormSpec) bool {
 		if a[i].Name != b[i].Name {
 			return false
 		}
-		if !reflect.DeepEqual(a[i].Default, b[i].Default) {
+		if !templatesEqual(a[i].Default, b[i].Default) {
 			return false
 		}
 	}
 	return true
+}
+
+func templatesEqual(a, b Template) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }

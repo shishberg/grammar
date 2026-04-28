@@ -56,7 +56,7 @@ func TestMergeSameRuleSameSchemeCombines(t *testing.T) {
 	}
 	// All four colours should be reachable from generation.
 	got := map[string]bool{}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		out, err := g1.Generate("color", newRand(int64(i)))
 		if err != nil {
 			t.Fatalf("Generate: %v", err)
@@ -164,6 +164,56 @@ func TestMergeIntoEmpty(t *testing.T) {
 	out, err := g.Generate("a", newRand(1))
 	if err != nil || out != "alpha" {
 		t.Errorf("got (%q, %v)", out, err)
+	}
+}
+
+// Merge must not retain references to other's *Rule values. Mutating
+// other after Merge — directly or via a second Merge — would
+// otherwise silently corrupt g.
+func TestMergeIsolatesRulesFromOther(t *testing.T) {
+	g := NewGrammar()
+	other := singleAlt("a", "first")
+	if err := g.Merge(other); err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	// Append to other's rule's alternatives directly; g must not see
+	// the new alternative.
+	other.rules["a"].Alternatives = append(other.rules["a"].Alternatives, Alternative{
+		Forms: map[string]Template{"default": {Literal{Text: "leaked"}}},
+	})
+	if got := len(g.rules["a"].Alternatives); got != 1 {
+		t.Errorf("g's rule alternative count = %d, want 1 — Merge leaked other's slice", got)
+	}
+}
+
+// Programmatic callers may build a FormSpec with Default left nil
+// (matching what Parse produces) or as an explicit empty Template{}.
+// Both encode "no default template" and must compare equal in form
+// schemes during Merge.
+func TestMergeNilAndEmptyTemplateAreEqual(t *testing.T) {
+	mk := func(def Template) *Grammar {
+		g := NewGrammar()
+		_ = g.AddRule("x", &Rule{
+			Forms: []FormSpec{
+				{Name: "default"},
+				{Name: "plural", Default: def},
+			},
+			Alternatives: []Alternative{{
+				Forms: map[string]Template{"default": {Literal{Text: "a"}}},
+			}},
+		})
+		return g
+	}
+	gNil := mk(nil)
+	gEmpty := mk(Template{})
+	// Build a third matching grammar to merge into; both should be
+	// accepted regardless of nil-vs-empty.
+	target := mk(nil)
+	if err := target.Merge(gNil); err != nil {
+		t.Fatalf("Merge nil: %v", err)
+	}
+	if err := target.Merge(gEmpty); err != nil {
+		t.Fatalf("Merge empty: %v", err)
 	}
 }
 

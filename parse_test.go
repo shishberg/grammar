@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+// A rule whose only body lines are comments has no entries and must
+// be reported the same way as a header followed by EOF.
+func TestParseRuleWithOnlyCommentsErrors(t *testing.T) {
+	src := "rule x\n  # just a comment\n  # and another\n"
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("Parse: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no entries") {
+		t.Errorf("err = %v; want it to mention 'no entries'", err)
+	}
+}
+
 func TestParseEmpty(t *testing.T) {
 	g, err := Parse("")
 	if err != nil {

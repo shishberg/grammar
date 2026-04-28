@@ -323,8 +323,9 @@ form-default template.
 - Conditional / probabilistic alternatives beyond per-line weights —
   e.g. picking a different alternative depending on what came before.
   Defer until a real grammar wants it.
-- `@include` or any cross-rule import semantics. The host concatenates
-  source before calling `Parse`. Library doesn't know about files.
+- `@include` or any cross-rule import semantics. The host parses each
+  file with `Parse`, combines them with `Merge`, and calls `Validate`
+  on the assembled grammar. The library doesn't know about files.
 - Built-in helpers like random integers, year picks, set
   permutations. If they appear later, they get modelled as pluggable
   template functions, not new directives.

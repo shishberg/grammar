@@ -102,8 +102,8 @@ Constraints not expressible in EBNF:
   form's default template (the `template` that follows `=` in a
   `form-spec`). It is a parse error anywhere else.
 - `rule-ref`'s `form-name` MUST name a form declared on the referenced
-  rule. (Checked at parse time when the rule's forms are known; for a
-  forward reference it is checked at parse-completion or generation.)
+  rule. (Checked by `Validate` once the full grammar is assembled, or
+  at generation time if `Validate` was skipped.)
 - A backslash followed by any byte *other* than `{`, `}`, `#`, `\` is
   *not* an escape: the backslash and the following byte are both
   literal. A trailing backslash at end of line is also literal.
