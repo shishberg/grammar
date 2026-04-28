@@ -1,0 +1,3 @@
+rule greeting
+  forms: default
+  hello

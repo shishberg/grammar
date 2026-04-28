@@ -1,0 +1,3 @@
+rule sentence
+  forms: default
+  the {color} thing

@@ -1,0 +1,7 @@
+# Compiled binaries
+/grammar
+/cmd/grammar/grammar
+
+# Go workspace files (live in the parent dir, not here)
+go.work
+go.work.sum

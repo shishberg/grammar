@@ -1,0 +1,8 @@
+rule tavern
+  forms: default
+  The {adj} {animal}
+  The {adj} {animal as A} and the other {*A}
+  The {animal:plural} of {adj} {object:plural}
+  The {object} and the {animal}
+  a {adj} {animal} drinks at the {object}
+  a {animal} walked into a {object}

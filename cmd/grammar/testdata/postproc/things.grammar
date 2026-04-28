@@ -1,0 +1,7 @@
+rule thing
+  forms: default
+  a fire_axe
+
+rule vowel
+  forms: default
+  a iron_axe

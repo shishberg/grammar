@@ -1,0 +1,28 @@
+rule adj
+  forms: default
+  golden
+  rusty
+  weeping
+  silent
+  weight=5 sleeping
+  drunken
+
+rule animal
+  forms: default, plural={}s
+  cat
+  dog
+  fox   | foxes
+  mouse | mice
+  ox    | oxen
+  goose | geese
+  otter
+  eagle
+  imp
+  owl
+
+rule object
+  forms: default, plural={}s
+  weight=2 tankard
+  shield
+  lantern
+  fire_axe
