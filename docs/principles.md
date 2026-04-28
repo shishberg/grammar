@@ -1,15 +1,14 @@
 # Grammar package: design principles
 
 Starting principles for a Go package that parses and generates from a
-rule-based text grammar, inspired by `mezzacotta-generator` but not
-aiming for compatibility with it.
+rule-based text grammar.
 
 ## 1. Formal spec
 
 The source format has a written grammar (EBNF or similar). Edge cases
-are defined, not "whatever the parser does." Mezzacotta's biggest
-weakness is having no spec — you reverse-engineer it from PHP source.
-We don't repeat that.
+are defined, not "whatever the parser does." A grammar engine is no
+better than the spec it's written against — without one, every quirk
+becomes load-bearing.
 
 ## 2. Library API first; source format is a thin layer on top
 
@@ -30,28 +29,30 @@ non-English hosts can leave them off and add their own.
 
 ## 4. One syntactic form per concept
 
-Mezzacotta has `_S` substitution suffixes and `|S` format declarations
-and leading-digit probability and `>` else syntax. Each concept gets
-exactly one surface form here.
+Each concept gets exactly one surface form. No "this character does
+X here, but Y there"; no parallel ways to spell the same thing. The
+parser's job is to recognise the form, not to disambiguate between
+several.
 
 ## 5. Explicit beats clever
 
 Weights look like an explicit tag (e.g. `weight=4 …`), not a leading
 character that has to be detected. No "if the line starts with digits,
-it's a probability." Sigil-juggling is what makes mezzacotta hard to
-spec.
+it's a probability." Surface forms whose meaning depends on subtle
+positional cues are hard to spec, hard to write, and hard to read.
 
 ## 6. Inflections live with their data
 
-`mouse|mice` on the same line as `mouse`. Tracery's `.s` modifier
-(just-append-s) is wrong for mice/oxen; mezzacotta got this right and
-it's worth keeping.
+`mouse|mice` on the same line as `mouse`. A modifier-based "just
+append s" approach is wrong for mice/oxen and forces the host to
+sprinkle exceptions through the grammar; keeping irregulars next to
+the singular form is the only sane place for them.
 
 ## 7. Deterministic when seeded
 
 Take a `*rand.Rand` (or a seed) so output is reproducible — useful for
-tests and "share this generation" features. Mezzacotta uses Python's
-global random state, which makes tests painful.
+tests and "share this generation" features. A globally-seeded RNG
+makes tests painful and outputs unshareable.
 
 ## Considered and dropped
 

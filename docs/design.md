@@ -1,7 +1,6 @@
 # Grammar package: design
 
 A Go package that parses and generates from a rule-based text grammar.
-Mezzacotta-inspired but not compatible.
 
 Principles for this package are in [principles.md](principles.md). The
 formal source-format grammar is in [ebnf.md](ebnf.md). This document
@@ -296,16 +295,17 @@ form-default template.
 
 ## Out of scope for v1
 
-- Conditional / probabilistic alternatives (mezzacotta's leading-digit
-  / `>` else syntax). Defer until a real grammar wants it.
+- Conditional / probabilistic alternatives beyond per-line weights —
+  e.g. picking a different alternative depending on what came before.
+  Defer until a real grammar wants it.
 - `@include` or any cross-rule import semantics. The host concatenates
   source before calling `Parse`. Library doesn't know about files.
 - Built-in helpers like random integers, year picks, set
   permutations. If they appear later, they get modelled as pluggable
   template functions, not new directives.
 - Multi-form variable saving. `{noun as X}` saves the *expansion*; you
-  cannot recall a saved noun in a different inflection. Inherit the
-  mezzacotta limitation; revisit if it bites.
+  cannot recall a saved noun in a different inflection. Revisit if
+  this bites.
 
 ## Open questions
 
