@@ -239,8 +239,10 @@ func (g *Grammar) GenerateWith(
     rule string, rng *rand.Rand, post ...PostProcessor,
 ) (string, error)
 
-// Merge adds the rules of other into g. Duplicate rule names are an error.
-// Merge(nil) is a no-op.
+// Merge adds the rules of other into g. When both grammars define a
+// rule with the same name and matching form schemes, their
+// alternatives are combined (g's first, then other's). Mismatched
+// form schemes wrap ErrFormSchemeMismatch. Merge(nil) is a no-op.
 func (g *Grammar) Merge(other *Grammar) error
 
 // PostProcessor transforms generated output. Pluggable per principle 3.
@@ -256,8 +258,15 @@ the same invariants.
 
 Errors from generation and parsing wrap a small set of sentinel values
 that callers can match with `errors.Is`: `ErrUndefinedRule`,
-`ErrUnknownForm`, `ErrUnsavedRecall`, `ErrRecursionLimit`, and
-`ErrDuplicateRule`.
+`ErrUnknownForm`, `ErrUnsavedRecall`, `ErrRecursionLimit`,
+`ErrDuplicateRule`, and `ErrFormSchemeMismatch`.
+
+`Merge` combines two same-name rules whose form schemes agree (same
+form names in the same order, with structurally equal form-default
+templates); the combined rule has g's alternatives followed by
+other's, in source order, weights preserved. A mismatched form
+scheme wraps `ErrFormSchemeMismatch`. `AddRule` does not combine —
+adding a name that's already present returns `ErrDuplicateRule`.
 
 ### Built-in post-processors
 

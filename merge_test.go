@@ -1,6 +1,8 @@
 package grammar
 
 import (
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -21,15 +23,135 @@ func TestMergeNonOverlapping(t *testing.T) {
 	}
 }
 
-func TestMergeOverlappingErrors(t *testing.T) {
-	g := singleAlt("a", "alpha")
-	other := singleAlt("a", "also-alpha")
-	err := g.Merge(other)
-	if err == nil {
-		t.Fatal("Merge of overlapping rule did not error")
+// Two grammars define the same rule with the same form scheme: Merge
+// appends other's alternatives onto g's. Weights are preserved.
+func TestMergeSameRuleSameSchemeCombines(t *testing.T) {
+	src1 := "rule color\n  red\n  weight=3 blue\n"
+	src2 := "rule color\n  green\n  weight=2 yellow\n"
+	g1, err := Parse(src1)
+	if err != nil {
+		t.Fatalf("Parse(src1): %v", err)
 	}
-	if !strings.Contains(err.Error(), "a") {
-		t.Errorf("error %q should name the colliding rule", err)
+	g2, err := Parse(src2)
+	if err != nil {
+		t.Fatalf("Parse(src2): %v", err)
+	}
+	if err := g1.Merge(g2); err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	r := g1.rules["color"]
+	if len(r.Alternatives) != 4 {
+		t.Fatalf("alternatives = %d, want 4", len(r.Alternatives))
+	}
+	wantText := []string{"red", "blue", "green", "yellow"}
+	wantWeight := []uint{1, 3, 1, 2}
+	for i := range wantText {
+		lit, ok := r.Alternatives[i].Forms["default"][0].(Literal)
+		if !ok || lit.Text != wantText[i] {
+			t.Errorf("alt %d text = %#v, want %q", i, r.Alternatives[i].Forms["default"][0], wantText[i])
+		}
+		if r.Alternatives[i].Weight != wantWeight[i] {
+			t.Errorf("alt %d weight = %d, want %d", i, r.Alternatives[i].Weight, wantWeight[i])
+		}
+	}
+	// All four colours should be reachable from generation.
+	got := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		out, err := g1.Generate("color", newRand(int64(i)))
+		if err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		got[out] = true
+	}
+	for _, w := range wantText {
+		if !got[w] {
+			t.Errorf("100 generations never produced %q (got %v)", w, got)
+		}
+	}
+}
+
+// Multi-form rules combine when the form names, order, and form-default
+// templates all match.
+func TestMergeSameRuleMatchingMultiFormScheme(t *testing.T) {
+	src1 := "rule animal\n  forms: default, plural={}s\n  cat\n"
+	src2 := "rule animal\n  forms: default, plural={}s\n  mouse | mice\n"
+	g1, _ := Parse(src1)
+	g2, _ := Parse(src2)
+	if err := g1.Merge(g2); err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	r := g1.rules["animal"]
+	if len(r.Alternatives) != 2 {
+		t.Fatalf("alternatives = %d, want 2", len(r.Alternatives))
+	}
+}
+
+// Form scheme mismatch: same rule name but different form names.
+func TestMergeSameRuleDifferentFormNamesErrors(t *testing.T) {
+	src1 := "rule animal\n  forms: default, plural={}s\n  cat\n"
+	src2 := "rule animal\n  forms: default, past={}ed\n  bark\n"
+	g1, _ := Parse(src1)
+	g2, _ := Parse(src2)
+	err := g1.Merge(g2)
+	if !errors.Is(err, ErrFormSchemeMismatch) {
+		t.Fatalf("err = %v; want errors.Is ErrFormSchemeMismatch", err)
+	}
+}
+
+// Form scheme mismatch: same form names, different order.
+func TestMergeSameRuleDifferentFormOrderErrors(t *testing.T) {
+	src1 := "rule x\n  forms: default, plural={}s, past={}ed\n  a\n"
+	src2 := "rule x\n  forms: default, past={}ed, plural={}s\n  b\n"
+	g1, _ := Parse(src1)
+	g2, _ := Parse(src2)
+	err := g1.Merge(g2)
+	if !errors.Is(err, ErrFormSchemeMismatch) {
+		t.Fatalf("err = %v; want errors.Is ErrFormSchemeMismatch", err)
+	}
+}
+
+// Form scheme mismatch: same form names but a non-default form's
+// default template differs structurally.
+func TestMergeSameRuleDifferentFormDefaultTemplateErrors(t *testing.T) {
+	src1 := "rule x\n  forms: default, plural={}s\n  a\n"
+	src2 := "rule x\n  forms: default, plural={}es\n  a\n"
+	g1, _ := Parse(src1)
+	g2, _ := Parse(src2)
+	err := g1.Merge(g2)
+	if !errors.Is(err, ErrFormSchemeMismatch) {
+		t.Fatalf("err = %v; want errors.Is ErrFormSchemeMismatch", err)
+	}
+	if !strings.Contains(err.Error(), "x") {
+		t.Errorf("error %q should name the rule", err)
+	}
+}
+
+// Programmatic AddRule still uses ErrDuplicateRule; the Merge-combine
+// behaviour does not extend to AddRule (there's no second-call to
+// combine with — each AddRule installs one rule definition).
+func TestAddRuleDuplicateStillErrors(t *testing.T) {
+	g := singleAlt("a", "first")
+	err := g.AddRule("a", &Rule{
+		Forms:        []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{{Forms: map[string]Template{"default": {Literal{Text: "second"}}}}},
+	})
+	if !errors.Is(err, ErrDuplicateRule) {
+		t.Fatalf("err = %v; want errors.Is ErrDuplicateRule", err)
+	}
+}
+
+// Sanity: reflect.DeepEqual is fine for template equality, including
+// nil-vs-empty-slice equivalence we depend on (a default form's
+// Default is nil; both sides of a same-scheme compare must agree).
+func TestMergeFormDefaultTemplateNilEquality(t *testing.T) {
+	g1 := singleAlt("a", "x")
+	g2 := singleAlt("a", "y")
+	// Both forms have nil Default for the default form.
+	if !reflect.DeepEqual(g1.rules["a"].Forms[0].Default, g2.rules["a"].Forms[0].Default) {
+		t.Fatal("default-form Default templates should be deep-equal")
+	}
+	if err := g1.Merge(g2); err != nil {
+		t.Fatalf("Merge: %v", err)
 	}
 }
 

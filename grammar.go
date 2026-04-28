@@ -7,16 +7,18 @@ package grammar
 import (
 	"errors"
 	"fmt"
+	"reflect"
 )
 
 // Sentinel errors. Callers can match these with errors.Is to distinguish
 // the kinds of failure they want to react to.
 var (
-	ErrUndefinedRule  = errors.New("undefined rule")
-	ErrUnknownForm    = errors.New("unknown form")
-	ErrUnsavedRecall  = errors.New("recall of unsaved name")
-	ErrRecursionLimit = errors.New("recursion limit exceeded")
-	ErrDuplicateRule  = errors.New("duplicate rule")
+	ErrUndefinedRule      = errors.New("undefined rule")
+	ErrUnknownForm        = errors.New("unknown form")
+	ErrUnsavedRecall      = errors.New("recall of unsaved name")
+	ErrRecursionLimit     = errors.New("recursion limit exceeded")
+	ErrDuplicateRule      = errors.New("duplicate rule")
+	ErrFormSchemeMismatch = errors.New("form scheme mismatch")
 )
 
 // Grammar is a set of named rules. Construct one with Parse or NewGrammar;
@@ -185,9 +187,15 @@ func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
 	return nil
 }
 
-// Merge adds the rules of other into g. A rule name that already exists
-// in g is an error (wraps ErrDuplicateRule) rather than a silent override.
-// Merge(nil) is a no-op.
+// Merge adds the rules of other into g. When both grammars define a
+// rule with the same name, the two definitions are combined provided
+// their form schemes match: same form names in the same order, with
+// structurally equal form-default templates. The combined rule's
+// alternatives are g's alternatives followed by other's, in source
+// order, with weights preserved.
+//
+// A name collision with mismatched form schemes wraps
+// ErrFormSchemeMismatch. Merge(nil) is a no-op.
 func (g *Grammar) Merge(other *Grammar) error {
 	if other == nil || len(other.rules) == 0 {
 		return nil
@@ -196,10 +204,35 @@ func (g *Grammar) Merge(other *Grammar) error {
 		g.rules = make(map[string]*Rule, len(other.rules))
 	}
 	for name, r := range other.rules {
-		if _, exists := g.rules[name]; exists {
-			return fmt.Errorf("%w: %q", ErrDuplicateRule, name)
+		existing, exists := g.rules[name]
+		if !exists {
+			g.rules[name] = r
+			continue
 		}
-		g.rules[name] = r
+		if !formSchemesMatch(existing.Forms, r.Forms) {
+			return fmt.Errorf("%w: rule %q", ErrFormSchemeMismatch, name)
+		}
+		existing.Alternatives = append(existing.Alternatives, r.Alternatives...)
 	}
 	return nil
+}
+
+// formSchemesMatch reports whether two Forms slices declare the same
+// form names in the same order with structurally equal form-default
+// templates. reflect.DeepEqual handles both the slice-equality and
+// the nil-vs-empty case (the default form's Default is nil on both
+// sides of any matching pair).
+func formSchemesMatch(a, b []FormSpec) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
+		}
+		if !reflect.DeepEqual(a[i].Default, b[i].Default) {
+			return false
+		}
+	}
+	return true
 }
