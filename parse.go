@@ -114,59 +114,7 @@ func (p *parser) run() (*Grammar, error) {
 	if err := p.endRule(); err != nil {
 		return nil, err
 	}
-	if err := p.validateRefs(); err != nil {
-		return nil, err
-	}
 	return p.grammar, nil
-}
-
-// validateRefs walks every parsed template and checks that each RuleRef
-// names a rule that exists and (if Form is set) declares that form.
-// Runs after the whole source has been parsed so forward references
-// (rule A mentioning rule B before B is declared) work.
-func (p *parser) validateRefs() error {
-	for name, r := range p.grammar.rules {
-		for _, alt := range r.Alternatives {
-			for _, tpl := range alt.Forms {
-				if err := p.validateTemplateRefs(name, tpl); err != nil {
-					return err
-				}
-			}
-		}
-		for _, fs := range r.Forms {
-			if err := p.validateTemplateRefs(name, fs.Default); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (p *parser) validateTemplateRefs(ruleName string, tpl Template) error {
-	for _, tok := range tpl {
-		ref, ok := tok.(RuleRef)
-		if !ok {
-			continue
-		}
-		target, exists := p.grammar.rules[ref.Rule]
-		if !exists {
-			return fmt.Errorf("rule %q references %w %q", ruleName, ErrUndefinedRule, ref.Rule)
-		}
-		if ref.Form == "" {
-			continue
-		}
-		found := false
-		for _, fs := range target.Forms {
-			if fs.Name == ref.Form {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("rule %q references %w %q on rule %q", ruleName, ErrUnknownForm, ref.Form, ref.Rule)
-		}
-	}
-	return nil
 }
 
 func isRuleHeader(s string) bool {

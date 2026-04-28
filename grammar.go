@@ -127,6 +127,64 @@ func (RuleRef) token() {}
 func (Recall) token()  {}
 func (SelfRef) token() {}
 
+// Validate walks every template in g and checks that each RuleRef
+// names a rule defined in g and (when Form is set) that the target
+// rule declares that form. Errors wrap ErrUndefinedRule or
+// ErrUnknownForm so callers can match them with errors.Is.
+//
+// Parse only enforces structural correctness inside the source it
+// sees, so a file with a forward reference to a rule defined in a
+// sibling file Parses successfully. Call Validate after Merging or
+// AddRule-ing all the pieces of a grammar together, before Generate.
+// Generate itself still rejects an unresolved reference at expansion
+// time, so Validate is optional — but calling it surfaces the error
+// up front rather than only on the unlucky generation that happens to
+// pick the broken alternative.
+func (g *Grammar) Validate() error {
+	for name, r := range g.rules {
+		for _, alt := range r.Alternatives {
+			for _, tpl := range alt.Forms {
+				if err := g.validateTemplateRefs(name, tpl); err != nil {
+					return err
+				}
+			}
+		}
+		for _, fs := range r.Forms {
+			if err := g.validateTemplateRefs(name, fs.Default); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
+	for _, tok := range tpl {
+		ref, ok := tok.(RuleRef)
+		if !ok {
+			continue
+		}
+		target, exists := g.rules[ref.Rule]
+		if !exists {
+			return fmt.Errorf("rule %q references %w %q", ruleName, ErrUndefinedRule, ref.Rule)
+		}
+		if ref.Form == "" {
+			continue
+		}
+		found := false
+		for _, fs := range target.Forms {
+			if fs.Name == ref.Form {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("rule %q references %w %q on rule %q", ruleName, ErrUnknownForm, ref.Form, ref.Rule)
+		}
+	}
+	return nil
+}
+
 // Merge adds the rules of other into g. A rule name that already exists
 // in g is an error (wraps ErrDuplicateRule) rather than a silent override.
 // Merge(nil) is a no-op.

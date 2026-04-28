@@ -285,9 +285,13 @@ func TestParseErrorEmptyBracesOutsideFormDefault(t *testing.T) {
 	}
 }
 
-func TestParseErrorUnknownForm(t *testing.T) {
+func TestValidateUnknownFormNamesIt(t *testing.T) {
 	src := "rule x\n  forms: default\n  hi\n\nrule y\n  forms: default\n  {x:plural}\n"
-	_, err := Parse(src)
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	err = g.Validate()
 	if err == nil {
 		t.Fatal("expected error for unknown form")
 	}
@@ -588,21 +592,69 @@ func TestParseDuplicateRuleWrapsSentinel(t *testing.T) {
 	}
 }
 
-// B8: ErrUndefinedRule from validateRefs.
+// B8: Parse no longer rejects an undefined rule reference; Validate does.
+// Parse must succeed so callers can Merge multiple split-source files
+// before any cross-file references are checked.
 func TestParseUndefinedRuleWrapsSentinel(t *testing.T) {
 	src := "rule x\n  forms: default\n  {missing}\n"
-	_, err := Parse(src)
-	if !errors.Is(err, ErrUndefinedRule) {
-		t.Fatalf("err = %v; want errors.Is ErrUndefinedRule", err)
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := g.Validate(); !errors.Is(err, ErrUndefinedRule) {
+		t.Fatalf("Validate err = %v; want errors.Is ErrUndefinedRule", err)
 	}
 }
 
-// B8: ErrUnknownForm from validateRefs.
+// B8: Same as above for an unknown-form reference.
 func TestParseUnknownFormWrapsSentinel(t *testing.T) {
 	src := "rule x\n  forms: default\n  hi\n\nrule y\n  forms: default\n  {x:plural}\n"
-	_, err := Parse(src)
-	if !errors.Is(err, ErrUnknownForm) {
-		t.Fatalf("err = %v; want errors.Is ErrUnknownForm", err)
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := g.Validate(); !errors.Is(err, ErrUnknownForm) {
+		t.Fatalf("Validate err = %v; want errors.Is ErrUnknownForm", err)
+	}
+}
+
+// Validate succeeds on a fully-resolved grammar.
+func TestValidateAllReferencesResolved(t *testing.T) {
+	src := `rule a
+  forms: default, plural={}s
+  cat
+
+rule x
+  forms: default
+  {a} {a:plural}
+`
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if err := g.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+}
+
+// The split-source case: each file Parses on its own; the cross-file
+// reference resolves once they have been merged into one grammar.
+func TestParseMergeValidateSplitSource(t *testing.T) {
+	parts := "rule color\n  red\n  blue\n"
+	top := "rule sentence\n  the {color} thing\n"
+	gParts, err := Parse(parts)
+	if err != nil {
+		t.Fatalf("Parse(parts): %v", err)
+	}
+	gTop, err := Parse(top)
+	if err != nil {
+		t.Fatalf("Parse(top): %v", err)
+	}
+	if err := gTop.Merge(gParts); err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if err := gTop.Validate(); err != nil {
+		t.Errorf("Validate after merge: %v", err)
 	}
 }
 

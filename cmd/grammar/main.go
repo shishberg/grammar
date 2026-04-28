@@ -78,16 +78,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	// grammar.Parse validates that every {rule} reference resolves
-	// within the source it sees, so files that split a grammar across
-	// boundaries (e.g. one file of leaf rules, one of top-level rules
-	// referring to them) can't be parsed in isolation. Concatenate the
-	// files and parse the result as one source. If that fails, re-parse
-	// each file individually so a syntactic error can be attributed to
-	// the file it came from; an error that only shows up in the combined
-	// parse (e.g. an unresolved cross-file reference) falls through to
-	// the combined error message.
-	var combined strings.Builder
+	// Parse each file on its own and merge the results. Per-file Parse
+	// only checks per-file syntax, so a parse error attributes cleanly
+	// to the file it came from. Cross-file reference resolution is
+	// deferred to Validate, which runs once after the merge.
+	g := grammar.NewGrammar()
 	for _, name := range files {
 		path := filepath.Join(*dir, name)
 		src, err := os.ReadFile(path)
@@ -95,27 +90,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%s: %v\n", name, err)
 			return 1
 		}
-		combined.Write(src)
-		if len(src) == 0 || src[len(src)-1] != '\n' {
-			combined.WriteByte('\n')
+		gFile, err := grammar.Parse(string(src))
+		if err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			return 1
 		}
-		combined.WriteByte('\n')
+		if err := g.Merge(gFile); err != nil {
+			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			return 1
+		}
 	}
-
-	g, err := grammar.Parse(combined.String())
-	if err != nil {
-		// Attribute the error to a single file when possible.
-		for _, name := range files {
-			path := filepath.Join(*dir, name)
-			src, rerr := os.ReadFile(path)
-			if rerr != nil {
-				continue
-			}
-			if _, perr := grammar.Parse(string(src)); perr != nil {
-				fmt.Fprintf(stderr, "%s: %v\n", name, perr)
-				return 1
-			}
-		}
+	if err := g.Validate(); err != nil {
 		fmt.Fprintf(stderr, "grammar: %v\n", err)
 		return 1
 	}

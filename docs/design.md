@@ -212,7 +212,9 @@ or rely on the backslash-protect behaviour above.
 ```go
 package grammar
 
-// Parse builds a Grammar from a source-format string.
+// Parse builds a Grammar from a source-format string. Parse only
+// checks syntax inside the source it sees; cross-source rule
+// references are resolved by Validate after merging.
 // Multiple Parse calls can be merged with Grammar.Merge.
 func Parse(source string) (*Grammar, error)
 
@@ -222,6 +224,12 @@ func NewGrammar() *Grammar
 // AddRule installs r under name. Returns an error if name is already
 // defined or if r fails the same shape checks Parse applies.
 func (g *Grammar) AddRule(name string, r *Rule) error
+
+// Validate checks that every {rule[:form]} reference in g resolves to
+// a defined rule (and declared form). Call after Merge or AddRule and
+// before Generate to surface dangling references up front. Errors
+// wrap ErrUndefinedRule or ErrUnknownForm.
+func (g *Grammar) Validate() error
 
 // Generate produces one expansion of the named rule's default form.
 func (g *Grammar) Generate(rule string, rng *rand.Rand) (string, error)

@@ -195,6 +195,51 @@ func TestRun_ParseErrorReportsFilename(t *testing.T) {
 	}
 }
 
+// Cross-file references: parts file defines a rule that the top file
+// references. Each file Parses on its own; Validate after Merge passes.
+func TestRun_CrossFileReferenceResolves(t *testing.T) {
+	dir := t.TempDir()
+	parts := "rule color\n  red\n"
+	top := "rule sentence\n  the {color} thing\n"
+	if err := writeFile(dir, "a_parts.grammar", parts); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(dir, "b_top.grammar", top); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-dir", dir, "-rule", "sentence", "-seed", "1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run exit=%d stderr=%q", code, stderr.String())
+	}
+	got := strings.TrimRight(stdout.String(), "\n")
+	if got != "the red thing" {
+		t.Fatalf("stdout = %q, want %q", got, "the red thing")
+	}
+}
+
+// Cross-file failure: a typo'd reference parses fine on its own but
+// fails the post-merge Validate, with a non-zero exit.
+func TestRun_CrossFileTypoFailsValidate(t *testing.T) {
+	dir := t.TempDir()
+	parts := "rule color\n  red\n"
+	top := "rule sentence\n  the {colour} thing\n"
+	if err := writeFile(dir, "a_parts.grammar", parts); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(dir, "b_top.grammar", top); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-dir", dir, "-rule", "sentence", "-seed", "1"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit=%d, want 1; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "colour") {
+		t.Errorf("stderr should name the missing rule: %q", stderr.String())
+	}
+}
+
 func TestRun_NonPositiveNRejected(t *testing.T) {
 	for _, n := range []string{"0", "-3"} {
 		t.Run("n="+n, func(t *testing.T) {
