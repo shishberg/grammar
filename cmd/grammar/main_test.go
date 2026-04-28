@@ -269,3 +269,51 @@ func TestRun_MergesMultipleFiles(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", got, "the red thing")
 	}
 }
+
+// Files in nested subdirectories are picked up alongside top-level
+// files, and cross-directory references resolve after merge.
+func TestRun_WalksSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "parts")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	top := "rule sentence\n  the {color} thing\n"
+	parts := "rule color\n  red\n"
+	if err := writeFile(dir, "top.grammar", top); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(sub, "color.grammar", parts); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-dir", dir, "-rule", "sentence", "-seed", "1"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run exit=%d stderr=%q", code, stderr.String())
+	}
+	got := strings.TrimRight(stdout.String(), "\n")
+	if got != "the red thing" {
+		t.Fatalf("stdout = %q, want %q", got, "the red thing")
+	}
+}
+
+// A parse error in a nested file is reported with its path so the
+// reader can find the file even when it lives in a subdirectory.
+func TestRun_SubdirParseErrorReportsPath(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "broken")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(sub, "bad.grammar", "this is not a valid grammar file\n"); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-dir", dir, "-rule", "x"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit=%d, want 1; stderr=%q", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), filepath.Join("broken", "bad.grammar")) {
+		t.Errorf("stderr should include subdir path: %q", stderr.String())
+	}
+}

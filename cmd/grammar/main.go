@@ -56,22 +56,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	entries, err := os.ReadDir(*dir)
-	if err != nil {
+	// filepath.WalkDir visits entries within each directory in lexical
+	// order, so the concatenation order is deterministic.
+	var files []string
+	if err := filepath.WalkDir(*dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".grammar") {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	}); err != nil {
 		fmt.Fprintf(stderr, "grammar: %v\n", err)
 		return 1
-	}
-	// os.ReadDir returns entries sorted by name, so iterating `entries`
-	// directly yields a deterministic concatenation order.
-	var files []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		if !strings.HasSuffix(e.Name(), ".grammar") {
-			continue
-		}
-		files = append(files, e.Name())
 	}
 	if len(files) == 0 {
 		fmt.Fprintf(stderr, "grammar: no .grammar files in %s\n", *dir)
@@ -83,20 +85,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// to the file it came from. Cross-file reference resolution is
 	// deferred to Validate, which runs once after the merge.
 	g := grammar.NewGrammar()
-	for _, name := range files {
-		path := filepath.Join(*dir, name)
+	for _, path := range files {
 		src, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			fmt.Fprintf(stderr, "%s: %v\n", path, err)
 			return 1
 		}
 		gFile, err := grammar.Parse(string(src))
 		if err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			fmt.Fprintf(stderr, "%s: %v\n", path, err)
 			return 1
 		}
 		if err := g.Merge(gFile); err != nil {
-			fmt.Fprintf(stderr, "%s: %v\n", name, err)
+			fmt.Fprintf(stderr, "%s: %v\n", path, err)
 			return 1
 		}
 	}
