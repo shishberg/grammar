@@ -27,10 +27,15 @@ entry-line   = { wsp } , [ weight-tag , wsp+ ] , entry-body , { wsp } ;
 
 The parser is line-oriented:
 
-- `rule-header` opens a new rule. Its `forms-line` MUST be the first
-  non-blank line that follows. Subsequent non-blank lines are
-  `entry-line`s for that rule, until the next blank line or the next
-  `rule-header`.
+- `rule-header` opens a new rule. The first non-blank line that
+  follows MAY be a `forms-line`; if it is, the rule has the declared
+  forms. If the first non-blank line after `rule-header` is an
+  `entry-line` instead, the rule is treated as if it had declared
+  `forms: default` (a single form named `default`, no inflection).
+- Once an `entry-line` has been consumed, a `forms-line` for the
+  same rule is a parse error.
+- Subsequent non-blank lines are `entry-line`s for the rule, until
+  the next blank line or the next `rule-header`.
 - A line consisting only of `blank` (possibly with a `comment`) is a
   blank line; blank lines separate rules and are otherwise ignored.
 

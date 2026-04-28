@@ -342,11 +342,64 @@ func TestParseErrorMissingRuleName(t *testing.T) {
 	}
 }
 
-func TestParseErrorEntryBeforeForms(t *testing.T) {
+// A rule with no forms: line is treated as if it declared `forms: default`.
+// The parsed shape must match the explicit-default form exactly.
+func TestParseImplicitDefaultFormSingleEntry(t *testing.T) {
+	implicit := "rule greeting\n  hello\n"
+	explicit := "rule greeting\n  forms: default\n  hello\n"
+	gImp, err := Parse(implicit)
+	if err != nil {
+		t.Fatalf("Parse(implicit): %v", err)
+	}
+	gExp, err := Parse(explicit)
+	if err != nil {
+		t.Fatalf("Parse(explicit): %v", err)
+	}
+	if !reflect.DeepEqual(gImp.rules, gExp.rules) {
+		t.Errorf("implicit and explicit forms produce different rules:\n  imp=%#v\n  exp=%#v", gImp.rules, gExp.rules)
+	}
+}
+
+func TestParseImplicitDefaultFormMultiEntry(t *testing.T) {
+	src := "rule greeting\n  hello\n  hi\n  weight=2 hey\n"
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	r := g.rules["greeting"]
+	if r == nil {
+		t.Fatal("rule greeting missing")
+	}
+	if len(r.Forms) != 1 || r.Forms[0].Name != "default" {
+		t.Errorf("forms = %+v, want single default", r.Forms)
+	}
+	if len(r.Alternatives) != 3 {
+		t.Fatalf("alternatives = %d, want 3", len(r.Alternatives))
+	}
+	wantText := []string{"hello", "hi", "hey"}
+	wantWeight := []uint{1, 1, 2}
+	for i := range wantText {
+		lit, ok := r.Alternatives[i].Forms["default"][0].(Literal)
+		if !ok || lit.Text != wantText[i] {
+			t.Errorf("alt %d text = %#v, want %q", i, r.Alternatives[i].Forms["default"][0], wantText[i])
+		}
+		if r.Alternatives[i].Weight != wantWeight[i] {
+			t.Errorf("alt %d weight = %d, want %d", i, r.Alternatives[i].Weight, wantWeight[i])
+		}
+	}
+}
+
+// A `forms:` line that follows an entry inside the same rule is a parse
+// error: the rule has already been treated as having an implicit
+// `forms: default` once the first entry was consumed.
+func TestParseErrorFormsAfterEntry(t *testing.T) {
 	src := "rule x\n  hi\n  forms: default\n"
 	_, err := Parse(src)
 	if err == nil {
-		t.Fatal("expected error when entry appears before forms:")
+		t.Fatal("expected error when forms: follows an entry")
+	}
+	if !strings.Contains(err.Error(), "forms") {
+		t.Errorf("error %q should mention forms:", err)
 	}
 }
 

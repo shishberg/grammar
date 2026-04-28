@@ -92,17 +92,20 @@ func (p *parser) run() (*Grammar, error) {
 		// same column layout as the original line up to the comment.
 		ln2 := sourceLine{num: ln.num, text: stripped}
 		if !p.formsDeclared {
-			if !strings.HasPrefix(trimmed, "forms:") {
-				return nil, parseErrorf(ln.num, indexOf(ln.text, trimmed)+1, "first line of rule %q must be a forms: declaration", p.currentRuleName)
+			if strings.HasPrefix(trimmed, "forms:") {
+				if err := p.parseFormsLine(ln2, trimmed); err != nil {
+					return nil, err
+				}
+				p.formsDeclared = true
+				continue
 			}
-			if err := p.parseFormsLine(ln2, trimmed); err != nil {
-				return nil, err
-			}
+			// Implicit single-default-form rule: the first non-blank
+			// line is an entry, so synthesise a `forms: default` for
+			// the rule and fall through to the entry-line handler.
+			p.currentRule.Forms = []FormSpec{{Name: "default"}}
 			p.formsDeclared = true
-			continue
-		}
-		if strings.HasPrefix(trimmed, "forms:") {
-			return nil, parseErrorf(ln.num, indexOf(ln.text, trimmed)+1, "rule %q has multiple forms: lines", p.currentRuleName)
+		} else if strings.HasPrefix(trimmed, "forms:") {
+			return nil, parseErrorf(ln.num, indexOf(ln.text, trimmed)+1, "rule %q has multiple forms: lines or forms: after an entry", p.currentRuleName)
 		}
 		if err := p.parseEntryLine(ln2, trimmed); err != nil {
 			return nil, err
@@ -176,9 +179,6 @@ func isRuleHeader(s string) bool {
 func (p *parser) endRule() error {
 	if p.currentRule == nil {
 		return nil
-	}
-	if !p.formsDeclared {
-		return fmt.Errorf("rule %q at line %d has no forms: declaration", p.currentRuleName, p.currentRuleLine)
 	}
 	if len(p.currentRule.Alternatives) == 0 {
 		return fmt.Errorf("rule %q at line %d has no entries", p.currentRuleName, p.currentRuleLine)

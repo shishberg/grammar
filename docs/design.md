@@ -84,16 +84,24 @@ rule tavern
 
 - A rule begins with `rule NAME` on its own line. Rules are
   blank-line separated.
-- The first non-blank line after `rule NAME` must be a `forms:` line
-  declaring the rule's inflectional scheme.
+- The first non-blank line after `rule NAME` may be a `forms:` line
+  declaring the rule's inflectional scheme. If it is omitted, the
+  rule is treated as if it had declared `forms: default` — a single
+  form named `default`, no inflection.
 - Subsequent non-blank lines are *entries* (one alternative each)
   until the next blank line or `rule` keyword.
+- A `forms:` line that follows any entry of the same rule is a parse
+  error.
 
 ### Forms declaration
 
 ```
 forms: NAME [= TEMPLATE] { , NAME [= TEMPLATE] }
 ```
+
+The `forms:` line is optional. Omitting it is shorthand for
+`forms: default` — a single form named `default` with no default
+template. Single-form rules don't need to write the line.
 
 The first listed form is the rule's *default form*. A form other than
 the default may give a *default template* used when an entry omits
