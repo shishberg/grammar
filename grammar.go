@@ -10,6 +10,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"unicode"
 )
 
 // Sentinel errors. Callers can match these with errors.Is to distinguish
@@ -291,13 +292,31 @@ func cloneAlternatives(alts []Alternative) []Alternative {
 	return out
 }
 
+const invalidTagDescription = "must be non-empty and not contain whitespace, control characters, comma, pipe, braces, #, \\, or ="
+
 func validateTags(tags []string) error {
 	for _, tag := range tags {
-		if !isRuleName(tag) {
-			return fmt.Errorf("invalid tag %q (must match [a-z][a-z0-9_]*)", tag)
+		if !isTagName(tag) {
+			return fmt.Errorf("invalid tag %q (%s)", tag, invalidTagDescription)
 		}
 	}
 	return nil
+}
+
+func isTagName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch r {
+		case ',', '|', '{', '}', '#', '\\', '=':
+			return false
+		}
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // formSchemesMatch reports whether two Forms slices declare the same

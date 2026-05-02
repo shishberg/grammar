@@ -377,8 +377,8 @@ func restoreScopeStack(scopes, snapshots []map[string]bool) {
 
 func validateTagSet(tags map[string]bool) error {
 	for _, tag := range slices.Sorted(maps.Keys(tags)) {
-		if !isRuleName(tag) {
-			return fmt.Errorf("grammar: invalid tag %q (must match [a-z][a-z0-9_]*)", tag)
+		if !isTagName(tag) {
+			return fmt.Errorf("grammar: invalid tag %q (%s)", tag, invalidTagDescription)
 		}
 	}
 	return nil

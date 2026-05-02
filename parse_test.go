@@ -213,7 +213,7 @@ func TestParseRuleRefTagOptions(t *testing.T) {
 
 rule x
   forms: default
-  {a|tags=fruit,food} {a|required=rare} {a:plural|tags=fruit as N} {*N}
+  {a|tags=fruit-🍎,mood/happy} {a|required=rare!} {a:plural|tags=fruit-🍎 as N} {*N}
 `
 	g, err := Parse(src)
 	if err != nil {
@@ -221,11 +221,11 @@ rule x
 	}
 	gotTpl := g.rules["x"].Alternatives[0].Forms["default"]
 	wantTpl := Template{
-		RuleRef{Rule: "a", Tags: []string{"fruit", "food"}},
+		RuleRef{Rule: "a", Tags: []string{"fruit-🍎", "mood/happy"}},
 		Literal{Text: " "},
-		RuleRef{Rule: "a", Required: []string{"rare"}},
+		RuleRef{Rule: "a", Required: []string{"rare!"}},
 		Literal{Text: " "},
-		RuleRef{Rule: "a", Form: "plural", Save: "N", Tags: []string{"fruit"}},
+		RuleRef{Rule: "a", Form: "plural", Save: "N", Tags: []string{"fruit-🍎"}},
 		Literal{Text: " "},
 		Recall{Name: "N"},
 	}
@@ -235,15 +235,24 @@ rule x
 }
 
 func TestParseRuleRefTagOptionsRejectInvalidTags(t *testing.T) {
-	src := `rule x
-  {a|tags=Fruit}
-`
-	_, err := Parse(src)
-	if err == nil {
-		t.Fatal("expected error for invalid tag")
+	tests := []string{
+		"{a|tags=fruit=red}",
+		"{a|tags=fruit,}",
+		"{a|tags=fruit,,food}",
+		"{a|tags=fruit food}",
+		"{a|tags=fruit\\red}",
+		"{a|tags=fruit#red}",
+		"{a|tags=fruit{red}",
 	}
-	if !strings.Contains(err.Error(), "invalid tag") {
-		t.Fatalf("err = %v, want invalid tag", err)
+	for _, body := range tests {
+		src := "rule x\n  " + body + "\n"
+		_, err := Parse(src)
+		if err == nil {
+			t.Fatalf("Parse(%q) returned nil error", body)
+		}
+		if !strings.Contains(err.Error(), "invalid tag") && !strings.Contains(err.Error(), "tag list is empty") {
+			t.Fatalf("err = %v, want invalid tag or empty tag list", err)
+		}
 	}
 }
 
@@ -815,7 +824,7 @@ rule story
 func TestParseEntryTags(t *testing.T) {
 	src := `rule snack
   forms: default, plural={}s
-  apple | apples tags=fruit,food
+  apple | apples tags=fruit-🍎,mood/happy
 `
 	g, err := Parse(src)
 	if err != nil {
@@ -825,7 +834,7 @@ func TestParseEntryTags(t *testing.T) {
 	if len(alts) != 1 {
 		t.Fatalf("alternatives = %d, want 1", len(alts))
 	}
-	if got, want := alts[0].Tags, []string{"fruit", "food"}; !slices.Equal(got, want) {
+	if got, want := alts[0].Tags, []string{"fruit-🍎", "mood/happy"}; !slices.Equal(got, want) {
 		t.Fatalf("Tags = %#v, want %#v", got, want)
 	}
 	defaultTpl := alts[0].Forms["default"]
@@ -865,15 +874,24 @@ func TestParseErrorEmptyEntryTags(t *testing.T) {
 }
 
 func TestParseErrorInvalidEntryTag(t *testing.T) {
-	src := `rule snack
-  apple tags=Fruit
-`
-	_, err := Parse(src)
-	if err == nil {
-		t.Fatal("expected error for invalid tag")
+	tests := []string{
+		"apple tags=fruit=red",
+		"apple tags=fruit,",
+		"apple tags=fruit,,food",
+		"apple tags=fruit food",
+		"apple tags=fruit\\red",
+		"apple tags=fruit{red",
+		"apple tags=fruit|red",
 	}
-	if !strings.Contains(err.Error(), "invalid tag") {
-		t.Fatalf("err = %v, want invalid tag", err)
+	for _, entry := range tests {
+		src := "rule snack\n  " + entry + "\n"
+		_, err := Parse(src)
+		if err == nil {
+			t.Fatalf("Parse(%q) returned nil error", entry)
+		}
+		if !strings.Contains(err.Error(), "invalid tag") {
+			t.Fatalf("err = %v, want invalid tag", err)
+		}
 	}
 }
 

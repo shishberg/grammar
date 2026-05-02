@@ -37,11 +37,52 @@ func TestSmokeProgrammaticConstruction(t *testing.T) {
 }
 
 func TestAddRuleRejectsInvalidAlternativeTag(t *testing.T) {
+	for _, tag := range []string{"fruit=red", "bad\x00tag"} {
+		g := NewGrammar()
+		err := g.AddRule("snack", &Rule{
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Tags: []string{tag}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		})
+		if err == nil {
+			t.Fatalf("AddRule with tag %q returned nil error", tag)
+		}
+		if !strings.Contains(err.Error(), "invalid tag") {
+			t.Fatalf("err = %v, want invalid tag", err)
+		}
+	}
+}
+
+func TestAddRuleAllowsDelimiterFreeAlternativeTags(t *testing.T) {
 	g := NewGrammar()
 	err := g.AddRule("snack", &Rule{
 		Forms: []FormSpec{{Name: "default"}},
 		Alternatives: []Alternative{
-			{Tags: []string{"Fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			{Tags: []string{"fruit-🍎", "mood/happy"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AddRule: %v", err)
+	}
+}
+
+func TestAddRuleValidatesRuleRefTags(t *testing.T) {
+	g := NewGrammar()
+	err := g.AddRule("snack", &Rule{
+		Forms: []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{
+			{Forms: map[string]Template{"default": {RuleRef{Rule: "filling", Tags: []string{"fruit-🍎"}, Required: []string{"mood/happy"}}}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AddRule: %v", err)
+	}
+
+	err = g.AddRule("meal", &Rule{
+		Forms: []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{
+			{Forms: map[string]Template{"default": {RuleRef{Rule: "snack", Required: []string{"bad=tag"}}}}},
 		},
 	})
 	if err == nil {

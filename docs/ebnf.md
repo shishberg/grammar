@@ -44,7 +44,7 @@ The parser is line-oriented:
 ```ebnf
 form-spec    = form-name , [ { wsp } , "=" , { wsp } , template ] ;
 weight-tag   = "weight" , "=" , digit , { digit } ;
-tags-tag     = "tags" , "=" , rule-name , { "," , rule-name } ;
+tags-tag     = "tags" , "=" , tag-list ;
 ```
 
 Constraints not expressible in EBNF:
@@ -58,7 +58,8 @@ Constraints not expressible in EBNF:
   `entry-line` (after leading `wsp`). A literal `weight=` later in the
   line is template text.
 - A trailing `tags=` declaration marks prerequisites for the entry.
-  Each tag uses the same lowercase identifier shape as `rule-name`.
+  Tags may contain any characters except whitespace, control
+  characters, comma, pipe, braces, `#`, `\`, and `=`.
 
 ## Entries
 
@@ -98,7 +99,9 @@ self-ref     = (* empty *) ;
 rule-ref     = rule-name , [ ":" , form-name ] , { "|" , ref-option } ,
                [ wsp+ , "as" , wsp+ , save-name ] ;
 ref-option   = ( "tags" | "required" ) , "=" , tag-list ;
-tag-list     = rule-name , { "," , rule-name } ;
+tag-list     = tag-name , { "," , tag-name } ;
+tag-name     = ? one or more bytes excluding whitespace, control
+                 characters, ",", "|", "{", "}", "#", "\", and "=" ? ;
 recall       = "*" , save-name ;
 ```
 

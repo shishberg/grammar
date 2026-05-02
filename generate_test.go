@@ -141,11 +141,11 @@ func TestGenerateWithTagsIncludesTaggedAlternatives(t *testing.T) {
 		"snack": {
 			Forms: []FormSpec{{Name: "default"}},
 			Alternatives: []Alternative{
-				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+				{Weight: 1, Tags: []string{"fruit-🍎"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
 			},
 		},
 	}}
-	out, err := g.Generate("snack", newRand(1), WithTags("fruit"))
+	out, err := g.Generate("snack", newRand(1), WithTags("fruit-🍎"))
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -160,12 +160,12 @@ func TestGenerateWithRequiredTagsRetriesUntilDirectTagProduced(t *testing.T) {
 			Forms: []FormSpec{{Name: "default"}},
 			Alternatives: []Alternative{
 				{Weight: 50, Forms: map[string]Template{"default": {Literal{Text: "bread"}}}},
-				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+				{Weight: 1, Tags: []string{"rare!"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
 			},
 		},
 	}}
 	for seed := int64(1); seed <= 20; seed++ {
-		out, err := g.Generate("snack", newRand(seed), WithRequiredTags("fruit"))
+		out, err := g.Generate("snack", newRand(seed), WithRequiredTags("rare!"))
 		if err != nil {
 			t.Fatalf("Generate seed %d: %v", seed, err)
 		}
@@ -214,12 +214,12 @@ func TestGenerateWithRequiredTagsErrorsWhenTagIsNotProduced(t *testing.T) {
 func TestGenerateInvalidTagsReportDeterministically(t *testing.T) {
 	g := singleAlt("snack", "bread")
 	for range 20 {
-		_, err := g.Generate("snack", newRand(1), WithTags("z_bad", "Bad"))
+		_, err := g.Generate("snack", newRand(1), WithTags("z_valid", "bad=tag"))
 		if err == nil {
 			t.Fatal("Generate returned nil error")
 		}
-		if !strings.Contains(err.Error(), `"Bad"`) {
-			t.Fatalf("err = %v, want Bad to be reported first", err)
+		if !strings.Contains(err.Error(), `"bad=tag"`) {
+			t.Fatalf("err = %v, want bad=tag to be reported first", err)
 		}
 	}
 }
@@ -308,17 +308,17 @@ func TestGenerateRuleRefTagsExposeNestedAlternativesAndPropagateProducedTags(t *
 		"filling": {
 			Forms: []FormSpec{{Name: "default"}},
 			Alternatives: []Alternative{
-				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+				{Weight: 1, Tags: []string{"mood/happy"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
 			},
 		},
 		"meal": {
 			Forms: []FormSpec{{Name: "default"}},
 			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
-				"default": {Literal{Text: "pie with "}, RuleRef{Rule: "filling", Tags: []string{"fruit"}}},
+				"default": {Literal{Text: "pie with "}, RuleRef{Rule: "filling", Tags: []string{"mood/happy"}}},
 			}}},
 		},
 	}}
-	out, err := g.Generate("meal", newRand(1), WithRequiredTags("fruit"))
+	out, err := g.Generate("meal", newRand(1), WithRequiredTags("mood/happy"))
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}

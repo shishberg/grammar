@@ -332,8 +332,8 @@ func parseTrailingTags(body string, line, col int) (string, []string, error) {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if !isRuleName(part) {
-			return "", nil, parseErrorf(line, col+tagStart, "invalid tag %q (must match [a-z][a-z0-9_]*)", part)
+		if !isTagName(part) {
+			return "", nil, parseErrorf(line, col+tagStart, "invalid tag %q (%s)", part, invalidTagDescription)
 		}
 		tags = append(tags, part)
 	}
@@ -368,12 +368,6 @@ func trailingTagStart(s string) int {
 	}
 	if last < 0 {
 		return -1
-	}
-	for i := last + len(prefix); i < len(s); i++ {
-		c := s[i]
-		if c == ' ' || c == '\t' {
-			return -1
-		}
 	}
 	return last
 }
@@ -565,8 +559,8 @@ func parseRefTagList(raw string, line, col int) ([]string, error) {
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if !isRuleName(part) {
-			return nil, parseErrorf(line, col, "invalid tag %q (must match [a-z][a-z0-9_]*)", part)
+		if !isTagName(part) {
+			return nil, parseErrorf(line, col, "invalid tag %q (%s)", part, invalidTagDescription)
 		}
 		tags = append(tags, part)
 	}

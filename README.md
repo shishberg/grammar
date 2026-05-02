@@ -74,7 +74,9 @@ Hosts that don't speak English just leave them off.
 ## Tags
 
 Trailing `tags=a,b` on an entry makes that alternative eligible only
-when those tags are available:
+when those tags are available. Tags can include emoji and punctuation;
+commas, pipes, braces, whitespace, control characters, `#`, `\`, and
+`=` are reserved by the syntax:
 
 ```
 rule snack

@@ -153,9 +153,10 @@ An entry is one alternative for a rule:
   appearing later in the line is template text.
 - `tags=a,b` at the end of an entry marks prerequisites for that
   alternative. Tagged alternatives are only eligible when all their
-  tags are available for the generation. Tags use the same lowercase
-  identifier shape as rule names. Untagged alternatives are always
-  eligible. `WithRequiredTags` makes those tags available and retries
+  tags are available for the generation. Tags may contain any characters
+  except whitespace, control characters, comma, pipe, braces, `#`, `\`,
+  and `=`. Untagged alternatives are always eligible. `WithRequiredTags`
+  makes those tags available and retries
   deterministic whole-generation attempts until the final expansion has
   produced the tags, then returns an error if it still has not after
   the retry cap.
