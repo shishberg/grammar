@@ -1,6 +1,7 @@
 package grammar
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,21 @@ func TestSmokeProgrammaticConstruction(t *testing.T) {
 		RuleRef{Rule: "y"},
 		Recall{Name: "Z"},
 		SelfRef{},
+	}
+}
+
+func TestAddRuleRejectsInvalidAlternativeTag(t *testing.T) {
+	g := NewGrammar()
+	err := g.AddRule("snack", &Rule{
+		Forms: []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{
+			{Tags: []string{"Fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+		},
+	})
+	if err == nil {
+		t.Fatal("AddRule returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
 	}
 }

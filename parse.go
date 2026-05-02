@@ -267,6 +267,12 @@ func (p *parser) parseEntryLine(ln sourceLine, trimmed string) error {
 		bodyStart += len(body) - len(newBody)
 		body = newBody
 	}
+	var tags []string
+	var err error
+	body, tags, err = parseTrailingTags(body, ln.num, bodyStart+1)
+	if err != nil {
+		return err
+	}
 	// Split body on top-level pipes (pipes inside {...} or part of a
 	// recognised backslash escape don't split). Track each value's
 	// starting offset inside ln.text for column reporting.
@@ -274,7 +280,7 @@ func (p *parser) parseEntryLine(ln sourceLine, trimmed string) error {
 	if len(values) > len(p.currentRule.Forms) {
 		return parseErrorf(ln.num, bodyStart+1, "rule %q has %d forms but entry supplies %d", p.currentRuleName, len(p.currentRule.Forms), len(values))
 	}
-	alt := Alternative{Weight: weight, Forms: map[string]Template{}}
+	alt := Alternative{Weight: weight, Forms: map[string]Template{}, Tags: tags}
 	for i, v := range values {
 		// Trim surrounding whitespace; track the new column so error
 		// messages point at the trimmed start, not the leading space.
@@ -311,6 +317,65 @@ func (p *parser) parseEntryLine(ln sourceLine, trimmed string) error {
 	}
 	p.currentRule.Alternatives = append(p.currentRule.Alternatives, alt)
 	return nil
+}
+
+func parseTrailingTags(body string, line, col int) (string, []string, error) {
+	trimmedRight := strings.TrimRight(body, " \t")
+	tagStart := trailingTagStart(trimmedRight)
+	if tagStart < 0 {
+		return body, nil, nil
+	}
+	raw := trimmedRight[tagStart+len("tags="):]
+	if raw == "" {
+		return "", nil, parseErrorf(line, col+tagStart, "tags= declaration is empty")
+	}
+	parts := strings.Split(raw, ",")
+	tags := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if !isRuleName(part) {
+			return "", nil, parseErrorf(line, col+tagStart, "invalid tag %q (must match [a-z][a-z0-9_]*)", part)
+		}
+		tags = append(tags, part)
+	}
+	body = strings.TrimRight(trimmedRight[:tagStart], " \t")
+	return body, tags, nil
+}
+
+func trailingTagStart(s string) int {
+	const prefix = "tags="
+	if !strings.HasPrefix(s, prefix) && !strings.Contains(s, " "+prefix) && !strings.Contains(s, "\t"+prefix) {
+		return -1
+	}
+	depth := 0
+	last := -1
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\\' && i+1 < len(s) {
+			i++
+			continue
+		}
+		if c == '{' {
+			depth++
+			continue
+		}
+		if c == '}' && depth > 0 {
+			depth--
+			continue
+		}
+		if depth == 0 && strings.HasPrefix(s[i:], prefix) && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+			last = i
+		}
+	}
+	if last < 0 {
+		return -1
+	}
+	for i := last + len(prefix); i < len(s); i++ {
+		c := s[i]
+		if c == ' ' || c == '\t' {
+			return -1
+		}
+	}
+	return last
 }
 
 // splitTopLevelPipesWithOffsets splits s on top-level '|' and returns

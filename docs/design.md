@@ -33,6 +33,7 @@ type FormSpec struct {
 type Alternative struct {
     Weight uint                  // default 1
     Forms  map[string]Template   // keyed by form name
+    Tags   []string              // prerequisites for choosing this alternative
 }
 
 type Template []Token
@@ -133,7 +134,7 @@ Examples:
 An entry is one alternative for a rule:
 
 ```
-[weight=N] TEMPLATE { | TEMPLATE }
+[weight=N] TEMPLATE { | TEMPLATE } [tags=TAG {, TAG}]
 ```
 
 - Pipe-separated form values appear in the order declared by `forms:`.
@@ -148,6 +149,14 @@ An entry is one alternative for a rule:
   alternative's weight. Default 1. The `weight=` tag is recognised
   only as a prefix at the start of an entry line; a literal `weight=`
   appearing later in the line is template text.
+- `tags=a,b` at the end of an entry marks prerequisites for that
+  alternative. Tagged alternatives are only eligible when all their
+  tags are available for the generation. Tags use the same lowercase
+  identifier shape as rule names. Untagged alternatives are always
+  eligible. `WithRequiredTags` makes those tags available and retries
+  deterministic whole-generation attempts until the final expansion has
+  produced the tags, then returns an error if it still has not after
+  the retry cap.
 
 ### Templates
 
@@ -232,11 +241,21 @@ func (g *Grammar) AddRule(name string, r *Rule) error
 func (g *Grammar) Validate() error
 
 // Generate produces one expansion of the named rule's default form.
-func (g *Grammar) Generate(rule string, rng *rand.Rand) (string, error)
+func (g *Grammar) Generate(
+    rule string, rng *rand.Rand, opts ...GenerateOption,
+) (string, error)
+
+func WithTags(tags ...string) GenerateOption
+func WithRequiredTags(tags ...string) GenerateOption
 
 // GenerateWith applies post-processors in order to the generated string.
 func (g *Grammar) GenerateWith(
     rule string, rng *rand.Rand, post ...PostProcessor,
+) (string, error)
+
+// GenerateWithOptions is the option-aware form of GenerateWith.
+func (g *Grammar) GenerateWithOptions(
+    rule string, rng *rand.Rand, opts []GenerateOption, post ...PostProcessor,
 ) (string, error)
 
 // Merge adds the rules of other into g. When both grammars define a

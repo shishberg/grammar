@@ -118,6 +118,112 @@ func TestGenerateWeightedDeterministic(t *testing.T) {
 	}
 }
 
+func TestGenerateExcludesTaggedAlternativesWithoutAvailableTags(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"snack": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+	}}
+	_, err := g.Generate("snack", newRand(1))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "snack") || !strings.Contains(err.Error(), "tags") {
+		t.Fatalf("err = %v, want rule name and tags", err)
+	}
+}
+
+func TestGenerateWithTagsIncludesTaggedAlternatives(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"snack": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+	}}
+	out, err := g.Generate("snack", newRand(1), WithTags("fruit"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "apple" {
+		t.Fatalf("out = %q, want apple", out)
+	}
+}
+
+func TestGenerateWithRequiredTagsRetriesUntilDirectTagProduced(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"snack": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 50, Forms: map[string]Template{"default": {Literal{Text: "bread"}}}},
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+	}}
+	for seed := int64(1); seed <= 20; seed++ {
+		out, err := g.Generate("snack", newRand(seed), WithRequiredTags("fruit"))
+		if err != nil {
+			t.Fatalf("Generate seed %d: %v", seed, err)
+		}
+		if out != "apple" {
+			t.Fatalf("seed %d out = %q, want apple", seed, out)
+		}
+	}
+}
+
+func TestGenerateWithRequiredTagsSeesNestedTags(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"snack": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"meal": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 50, Forms: map[string]Template{"default": {Literal{Text: "toast"}}}},
+				{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "with "}, RuleRef{Rule: "snack"}}}},
+			},
+		},
+	}}
+	out, err := g.Generate("meal", newRand(2), WithRequiredTags("fruit"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "with apple" {
+		t.Fatalf("out = %q, want with apple", out)
+	}
+}
+
+func TestGenerateWithRequiredTagsErrorsWhenTagIsNotProduced(t *testing.T) {
+	g := singleAlt("snack", "bread")
+	_, err := g.Generate("snack", newRand(1), WithRequiredTags("fruit"))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "required tags") {
+		t.Fatalf("err = %v, want required tags", err)
+	}
+}
+
+func TestGenerateInvalidTagsReportDeterministically(t *testing.T) {
+	g := singleAlt("snack", "bread")
+	for range 20 {
+		_, err := g.Generate("snack", newRand(1), WithTags("z_bad", "Bad"))
+		if err == nil {
+			t.Fatal("Generate returned nil error")
+		}
+		if !strings.Contains(err.Error(), `"Bad"`) {
+			t.Fatalf("err = %v, want Bad to be reported first", err)
+		}
+	}
+}
+
 func TestGenerateRuleRefRecurses(t *testing.T) {
 	g := &Grammar{rules: map[string]*Rule{
 		"greeting": {

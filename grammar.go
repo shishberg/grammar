@@ -62,6 +62,9 @@ func (g *Grammar) AddRule(name string, r *Rule) error {
 		if _, ok := alt.Forms[defaultName]; !ok {
 			return fmt.Errorf("rule %q alternative %d: missing default form %q", name, i, defaultName)
 		}
+		if err := validateTags(alt.Tags); err != nil {
+			return fmt.Errorf("rule %q alternative %d: %w", name, i, err)
+		}
 	}
 	g.rules[name] = r
 	return nil
@@ -86,11 +89,14 @@ type FormSpec struct {
 }
 
 // Alternative is one weighted choice within a rule. Forms maps form name
-// to the template used when that form is requested. A zero Weight is
-// treated as 1 by the generator; Parse rejects an explicit weight=0.
+// to the template used when that form is requested. Tags lists any
+// prerequisites that must be available before the generator may choose
+// the alternative. A zero Weight is treated as 1 by the generator; Parse
+// rejects an explicit weight=0.
 type Alternative struct {
 	Weight uint
 	Forms  map[string]Template
+	Tags   []string
 }
 
 // Template is a sequence of literal characters and substitution tokens.
@@ -221,7 +227,7 @@ func (g *Grammar) Merge(other *Grammar) error {
 		if !formSchemesMatch(existing.Forms, r.Forms) {
 			return fmt.Errorf("%w: %q", ErrFormSchemeMismatch, name)
 		}
-		existing.Alternatives = append(existing.Alternatives, r.Alternatives...)
+		existing.Alternatives = append(existing.Alternatives, cloneAlternatives(r.Alternatives)...)
 	}
 	return nil
 }
@@ -231,8 +237,25 @@ func (g *Grammar) Merge(other *Grammar) error {
 // Alternatives don't disturb the other.
 func cloneRule(r *Rule) *Rule {
 	out := *r
-	out.Alternatives = slices.Clone(r.Alternatives)
+	out.Alternatives = cloneAlternatives(r.Alternatives)
 	return &out
+}
+
+func cloneAlternatives(alts []Alternative) []Alternative {
+	out := slices.Clone(alts)
+	for i := range out {
+		out[i].Tags = slices.Clone(out[i].Tags)
+	}
+	return out
+}
+
+func validateTags(tags []string) error {
+	for _, tag := range tags {
+		if !isRuleName(tag) {
+			return fmt.Errorf("invalid tag %q (must match [a-z][a-z0-9_]*)", tag)
+		}
+	}
+	return nil
 }
 
 // formSchemesMatch reports whether two Forms slices declare the same

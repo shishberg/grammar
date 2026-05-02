@@ -2,7 +2,9 @@ package grammar
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
+	"slices"
 	"strings"
 )
 
@@ -12,16 +14,53 @@ import (
 // rule expansions, not template tokens, so it tracks the user-visible
 // nesting depth rather than the byte length of the output.
 const defaultMaxDepth = 200
+const defaultRequiredTagAttempts = 1000
 
 // PostProcessor transforms generated output. Hosts compose them via
 // GenerateWith; the package ships English helpers in a subpackage but
 // hosts targeting other languages can leave them off.
 type PostProcessor func(string) string
 
+// GenerateOption configures tag availability and requirements for one
+// Generate call.
+type GenerateOption func(*generateConfig)
+
+type generateConfig struct {
+	available map[string]bool
+	required  map[string]bool
+}
+
+// WithTags makes tagged alternatives eligible for this generation.
+func WithTags(tags ...string) GenerateOption {
+	return func(c *generateConfig) {
+		for _, tag := range tags {
+			c.available[tag] = true
+		}
+	}
+}
+
+// WithRequiredTags requires the finished top-level expansion to have
+// produced each tag. Required tags are also available while generating.
+func WithRequiredTags(tags ...string) GenerateOption {
+	return func(c *generateConfig) {
+		for _, tag := range tags {
+			c.available[tag] = true
+			c.required[tag] = true
+		}
+	}
+}
+
 // GenerateWith generates the rule and then applies post in declaration
 // order. With no post-processors it behaves like Generate.
 func (g *Grammar) GenerateWith(rule string, rng *rand.Rand, post ...PostProcessor) (string, error) {
-	out, err := g.Generate(rule, rng)
+	return g.GenerateWithOptions(rule, rng, nil, post...)
+}
+
+// GenerateWithOptions generates the rule with opts and then applies post
+// in declaration order. It is the option-aware form of GenerateWith for
+// callers that need tags and post-processors together.
+func (g *Grammar) GenerateWithOptions(rule string, rng *rand.Rand, opts []GenerateOption, post ...PostProcessor) (string, error) {
+	out, err := g.Generate(rule, rng, opts...)
 	if err != nil {
 		return "", err
 	}
@@ -32,7 +71,7 @@ func (g *Grammar) GenerateWith(rule string, rng *rand.Rand, post ...PostProcesso
 }
 
 // Generate produces one expansion of the named rule's default form.
-func (g *Grammar) Generate(rule string, rng *rand.Rand) (string, error) {
+func (g *Grammar) Generate(rule string, rng *rand.Rand, opts ...GenerateOption) (string, error) {
 	if rng == nil {
 		return "", fmt.Errorf("grammar: rng must not be nil")
 	}
@@ -40,17 +79,53 @@ func (g *Grammar) Generate(rule string, rng *rand.Rand) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrUndefinedRule, rule)
 	}
+	cfg := generateConfig{
+		available: map[string]bool{},
+		required:  map[string]bool{},
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	if err := validateTagSet(cfg.available); err != nil {
+		return "", err
+	}
+	if err := validateTagSet(cfg.required); err != nil {
+		return "", err
+	}
+	attempts := 1
+	if len(cfg.required) > 0 {
+		attempts = defaultRequiredTagAttempts
+	}
+	var last string
+	for attempt := 0; attempt < attempts; attempt++ {
+		out, produced, err := g.generateOnce(rule, r, rng, cfg.available)
+		if err != nil {
+			return "", err
+		}
+		if hasAllTags(produced, cfg.required) {
+			return out, nil
+		}
+		last = out
+	}
+	return "", fmt.Errorf("grammar: rule %q could not produce required tags after %d attempts (last output %q)", rule, attempts, last)
+}
+
+func (g *Grammar) generateOnce(rule string, r *Rule, rng *rand.Rand, available map[string]bool) (string, map[string]bool, error) {
 	st := &genState{
-		grammar: g,
-		rng:     rng,
-		saved:   map[string]string{},
-		max:     defaultMaxDepth,
+		grammar:   g,
+		rng:       rng,
+		saved:     map[string]string{},
+		available: available,
+		produced:  map[string]bool{},
+		max:       defaultMaxDepth,
 	}
 	var sb strings.Builder
 	if err := st.expandRule(&sb, rule, r, "", 0); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return sb.String(), nil
+	return sb.String(), st.produced, nil
 }
 
 // genState is the per-Generate-call mutable context: the rng, saved
@@ -58,10 +133,12 @@ func (g *Grammar) Generate(rule string, rng *rand.Rand) (string, error) {
 // budget. Each top-level Generate call gets a fresh genState so saved
 // names don't leak across calls.
 type genState struct {
-	grammar *Grammar
-	rng     *rand.Rand
-	saved   map[string]string
-	max     int
+	grammar   *Grammar
+	rng       *rand.Rand
+	saved     map[string]string
+	available map[string]bool
+	produced  map[string]bool
+	max       int
 }
 
 func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formName string, depth int) error {
@@ -78,6 +155,9 @@ func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formNa
 	alt, err := s.pickAlternative(name, r)
 	if err != nil {
 		return err
+	}
+	for _, tag := range alt.Tags {
+		s.produced[tag] = true
 	}
 	// SelfRef inside form.Default substitutes the alternative's
 	// default-form expansion; the form-default branch handles that.
@@ -161,6 +241,9 @@ func (s *genState) pickAlternative(name string, r *Rule) (*Alternative, error) {
 	}
 	var total uint
 	for i := range r.Alternatives {
+		if !s.tagsAvailable(r.Alternatives[i].Tags) {
+			continue
+		}
 		w := r.Alternatives[i].Weight
 		if w == 0 {
 			w = 1
@@ -168,10 +251,13 @@ func (s *genState) pickAlternative(name string, r *Rule) (*Alternative, error) {
 		total += w
 	}
 	if total == 0 {
-		return nil, fmt.Errorf("rule %q has zero total weight", name)
+		return nil, fmt.Errorf("rule %q has no eligible alternatives for available tags", name)
 	}
 	pick := uint(s.rng.Int63n(int64(total)))
 	for i := range r.Alternatives {
+		if !s.tagsAvailable(r.Alternatives[i].Tags) {
+			continue
+		}
 		w := r.Alternatives[i].Weight
 		if w == 0 {
 			w = 1
@@ -182,6 +268,33 @@ func (s *genState) pickAlternative(name string, r *Rule) (*Alternative, error) {
 		pick -= w
 	}
 	return nil, fmt.Errorf("internal: weighted pick fell through (rule %q, total %d)", name, total)
+}
+
+func (s *genState) tagsAvailable(tags []string) bool {
+	for _, tag := range tags {
+		if !s.available[tag] {
+			return false
+		}
+	}
+	return true
+}
+
+func hasAllTags(produced, required map[string]bool) bool {
+	for tag := range required {
+		if !produced[tag] {
+			return false
+		}
+	}
+	return true
+}
+
+func validateTagSet(tags map[string]bool) error {
+	for _, tag := range slices.Sorted(maps.Keys(tags)) {
+		if !isRuleName(tag) {
+			return fmt.Errorf("grammar: invalid tag %q (must match [a-z][a-z0-9_]*)", tag)
+		}
+	}
+	return nil
 }
 
 func findForm(r *Rule, name string) (FormSpec, bool) {

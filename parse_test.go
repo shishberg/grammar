@@ -3,6 +3,7 @@ package grammar
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -736,5 +737,83 @@ rule story
 				t.Errorf("plural unexpected: %q", out)
 			}
 		}
+	}
+}
+
+func TestParseEntryTags(t *testing.T) {
+	src := `rule snack
+  forms: default, plural={}s
+  apple | apples tags=fruit,food
+`
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	alts := g.rules["snack"].Alternatives
+	if len(alts) != 1 {
+		t.Fatalf("alternatives = %d, want 1", len(alts))
+	}
+	if got, want := alts[0].Tags, []string{"fruit", "food"}; !slices.Equal(got, want) {
+		t.Fatalf("Tags = %#v, want %#v", got, want)
+	}
+	defaultTpl := alts[0].Forms["default"]
+	if got, want := defaultTpl, (Template{Literal{Text: "apple"}}); !templatesEqual(got, want) {
+		t.Fatalf("default template = %#v, want %#v", got, want)
+	}
+	pluralTpl := alts[0].Forms["plural"]
+	if got, want := pluralTpl, (Template{Literal{Text: "apples"}}); !templatesEqual(got, want) {
+		t.Fatalf("plural template = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseEntryTagsBeforeComment(t *testing.T) {
+	src := `rule snack
+  apple tags=fruit # available only when fruit is present
+`
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got, want := g.rules["snack"].Alternatives[0].Tags, []string{"fruit"}; !slices.Equal(got, want) {
+		t.Fatalf("Tags = %#v, want %#v", got, want)
+	}
+}
+
+func TestParseErrorEmptyEntryTags(t *testing.T) {
+	src := `rule snack
+  apple tags=
+`
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("expected error for empty tags")
+	}
+	if !strings.Contains(err.Error(), "tags") {
+		t.Fatalf("err = %v, want tags", err)
+	}
+}
+
+func TestParseErrorInvalidEntryTag(t *testing.T) {
+	src := `rule snack
+  apple tags=Fruit
+`
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("expected error for invalid tag")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
+	}
+}
+
+func TestParseTagsInsideReferenceAreNotTrailingTags(t *testing.T) {
+	src := `rule snack
+  {tags=fruit}
+`
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("expected reference parse error")
+	}
+	if strings.Contains(err.Error(), "tag") && !strings.Contains(err.Error(), "rule name") {
+		t.Fatalf("err = %v, want reference parsing error rather than tag parsing", err)
 	}
 }

@@ -26,8 +26,8 @@ func TestMergeNonOverlapping(t *testing.T) {
 // Two grammars define the same rule with the same form scheme: Merge
 // appends other's alternatives onto g's. Weights are preserved.
 func TestMergeSameRuleSameSchemeCombines(t *testing.T) {
-	src1 := "rule color\n  red\n  weight=3 blue\n"
-	src2 := "rule color\n  green\n  weight=2 yellow\n"
+	src1 := "rule color\n  red\n  weight=3 blue tags=cool\n"
+	src2 := "rule color\n  green tags=nature\n  weight=2 yellow\n"
 	g1, err := Parse(src1)
 	if err != nil {
 		t.Fatalf("Parse(src1): %v", err)
@@ -45,6 +45,7 @@ func TestMergeSameRuleSameSchemeCombines(t *testing.T) {
 	}
 	wantText := []string{"red", "blue", "green", "yellow"}
 	wantWeight := []uint{1, 3, 1, 2}
+	wantTags := [][]string{nil, []string{"cool"}, []string{"nature"}, nil}
 	for i := range wantText {
 		lit, ok := r.Alternatives[i].Forms["default"][0].(Literal)
 		if !ok || lit.Text != wantText[i] {
@@ -53,11 +54,14 @@ func TestMergeSameRuleSameSchemeCombines(t *testing.T) {
 		if r.Alternatives[i].Weight != wantWeight[i] {
 			t.Errorf("alt %d weight = %d, want %d", i, r.Alternatives[i].Weight, wantWeight[i])
 		}
+		if !reflect.DeepEqual(r.Alternatives[i].Tags, wantTags[i]) {
+			t.Errorf("alt %d tags = %#v, want %#v", i, r.Alternatives[i].Tags, wantTags[i])
+		}
 	}
 	// All four colours should be reachable from generation.
 	got := map[string]bool{}
 	for i := range 100 {
-		out, err := g1.Generate("color", newRand(int64(i)))
+		out, err := g1.Generate("color", newRand(int64(i)), WithTags("cool", "nature"))
 		if err != nil {
 			t.Fatalf("Generate: %v", err)
 		}

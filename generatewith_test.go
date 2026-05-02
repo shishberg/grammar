@@ -28,3 +28,21 @@ func TestGenerateWithNoProcessorsMatchesGenerate(t *testing.T) {
 		t.Errorf("out = %q, want %q", out, "hello")
 	}
 }
+
+func TestGenerateWithOptionsCombinesTagsAndPostProcessors(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"r": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+	}}
+	out, err := g.GenerateWithOptions("r", newRand(1), []GenerateOption{WithTags("fruit")}, strings.ToUpper)
+	if err != nil {
+		t.Fatalf("GenerateWithOptions: %v", err)
+	}
+	if out != "APPLE" {
+		t.Errorf("out = %q, want APPLE", out)
+	}
+}

@@ -71,6 +71,23 @@ out, _ := g.GenerateWith("story", rng, english.UnderscoreToSpace, english.AAn)
 
 Hosts that don't speak English just leave them off.
 
+## Tags
+
+Trailing `tags=a,b` on an entry makes that alternative eligible only
+when those tags are available:
+
+```
+rule snack
+  apple tags=fruit
+  bread
+```
+
+Use `Generate("snack", rng, grammar.WithTags("fruit"))` to make tagged
+entries eligible. `WithRequiredTags("fruit")` retries deterministic
+generations until the finished expansion produced the required tag, then
+returns an error if it still has not after the retry cap. Use
+`GenerateWithOptions` when combining tag options with post-processors.
+
 ## Command-line tool
 
 `cmd/grammar` reads a directory of `.grammar` files, merges them, and

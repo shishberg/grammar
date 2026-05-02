@@ -22,7 +22,7 @@ content      = blank
 blank        = { wsp } ;
 rule-header  = { wsp } , "rule" , wsp+ , rule-name , { wsp } ;
 forms-line   = { wsp } , "forms:" , { wsp } , form-spec , { { wsp } , "," , { wsp } , form-spec } , { wsp } ;
-entry-line   = { wsp } , [ weight-tag , wsp+ ] , entry-body , { wsp } ;
+entry-line   = { wsp } , [ weight-tag , wsp+ ] , entry-body , [ wsp+ , tags-tag ] , { wsp } ;
 ```
 
 The parser is line-oriented:
@@ -44,6 +44,7 @@ The parser is line-oriented:
 ```ebnf
 form-spec    = form-name , [ { wsp } , "=" , { wsp } , template ] ;
 weight-tag   = "weight" , "=" , digit , { digit } ;
+tags-tag     = "tags" , "=" , rule-name , { "," , rule-name } ;
 ```
 
 Constraints not expressible in EBNF:
@@ -56,6 +57,8 @@ Constraints not expressible in EBNF:
 - The `weight=` prefix is recognised only at the start of an
   `entry-line` (after leading `wsp`). A literal `weight=` later in the
   line is template text.
+- A trailing `tags=` declaration marks prerequisites for the entry.
+  Each tag uses the same lowercase identifier shape as `rule-name`.
 
 ## Entries
 
