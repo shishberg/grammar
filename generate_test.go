@@ -435,6 +435,93 @@ func TestGenerateNestedRuleRefRequiredDoesNotLeakDiscardedAttemptTags(t *testing
 	}
 }
 
+func TestGenerateBacktracksWhenNestedTagsMakeAlternativeImpossible(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"filling": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"dessert": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 20, Forms: map[string]Template{"default": {Literal{Text: "bad "}, RuleRef{Rule: "filling", Tags: []string{"savory"}}}}},
+				{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "good "}, RuleRef{Rule: "filling", Tags: []string{"fruit"}}}}},
+			},
+		},
+	}}
+	for seed := int64(1); seed <= 20; seed++ {
+		out, err := g.Generate("dessert", newRand(seed))
+		if err != nil {
+			t.Fatalf("Generate seed %d: %v", seed, err)
+		}
+		if out != "good apple" {
+			t.Fatalf("seed %d out = %q, want good apple", seed, out)
+		}
+	}
+}
+
+func TestGenerateBacktrackingDoesNotLeakSavedNamesOrTags(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"filling": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"dessert": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 20, Tags: []string{"bad_attempt"}, Forms: map[string]Template{"default": {
+					Literal{Text: "bad "},
+					RuleRef{Rule: "filling", Tags: []string{"fruit"}, Save: "BAD"},
+					Literal{Text: " "},
+					RuleRef{Rule: "filling", Tags: []string{"savory"}},
+				}}},
+				{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "good "}, RuleRef{Rule: "filling", Tags: []string{"fruit"}}}}},
+			},
+		},
+	}}
+	for seed := int64(1); seed <= 20; seed++ {
+		out, err := g.Generate("dessert", newRand(seed), WithRequiredTags("fruit"))
+		if err != nil {
+			t.Fatalf("Generate seed %d: %v", seed, err)
+		}
+		if out != "good apple" {
+			t.Fatalf("seed %d out = %q, want good apple", seed, out)
+		}
+	}
+	if _, err := g.Generate("dessert", newRand(1), WithRequiredTags("bad_attempt")); err == nil {
+		t.Fatal("Generate with required bad_attempt returned nil error")
+	}
+}
+
+func TestGenerateBacktrackingRestoresSavedNames(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"filling": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"dessert": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 20, Forms: map[string]Template{"default": {
+					RuleRef{Rule: "filling", Tags: []string{"fruit"}, Save: "BAD"},
+					RuleRef{Rule: "filling", Tags: []string{"savory"}},
+				}}},
+				{Weight: 1, Forms: map[string]Template{"default": {Recall{Name: "BAD"}}}},
+			},
+		},
+	}}
+	_, err := g.Generate("dessert", newRand(1))
+	if !errors.Is(err, ErrUnsavedRecall) {
+		t.Fatalf("err = %v; want errors.Is ErrUnsavedRecall", err)
+	}
+}
+
 func TestGenerateSaveRecall(t *testing.T) {
 	g := &Grammar{rules: map[string]*Rule{
 		"animal": {

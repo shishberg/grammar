@@ -1,6 +1,7 @@
 package grammar
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -15,6 +16,11 @@ import (
 // nesting depth rather than the byte length of the output.
 const defaultMaxDepth = 200
 const defaultRequiredTagAttempts = 1000
+
+var (
+	errNoEligibleAlternatives = errors.New("no eligible alternatives")
+	errRequiredTagsMissing    = errors.New("required tags not produced")
+)
 
 // PostProcessor transforms generated output. Hosts compose them via
 // GenerateWith; the package ships English helpers in a subpackage but
@@ -142,6 +148,13 @@ type genState struct {
 	max       int
 }
 
+type genSnapshot struct {
+	saved     map[string]string
+	available map[string]bool
+	produced  map[string]bool
+	scopes    []map[string]bool
+}
+
 func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formName string, depth int) error {
 	if depth > s.max {
 		return fmt.Errorf("%w (%d) at rule %q", ErrRecursionLimit, s.max, name)
@@ -153,10 +166,35 @@ func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formNa
 	if !ok {
 		return fmt.Errorf("rule %q does not declare %w %q", name, ErrUnknownForm, formName)
 	}
-	alt, err := s.pickAlternative(name, r)
-	if err != nil {
-		return err
+	if len(r.Alternatives) == 0 {
+		return fmt.Errorf("rule %q has no alternatives", name)
 	}
+	remaining := s.eligibleAlternatives(r)
+	if len(remaining) == 0 {
+		return fmt.Errorf("rule %q has no eligible alternatives for available tags: %w", name, errNoEligibleAlternatives)
+	}
+	var lastErr error
+	for len(remaining) > 0 {
+		picked := s.pickAlternativeIndex(r, remaining)
+		alt := &r.Alternatives[picked]
+		snapshot := s.snapshot()
+		var buf strings.Builder
+		if err := s.expandAlternative(&buf, name, r, form, alt, formName, depth); err != nil {
+			s.restore(snapshot)
+			if !isBacktrackable(err) {
+				return err
+			}
+			lastErr = err
+			remaining = removeAlternativeIndex(remaining, picked)
+			continue
+		}
+		out.WriteString(buf.String())
+		return nil
+	}
+	return fmt.Errorf("rule %q: all eligible alternatives failed: %w", name, lastErr)
+}
+
+func (s *genState) expandAlternative(out *strings.Builder, name string, r *Rule, form FormSpec, alt *Alternative, formName string, depth int) error {
 	for _, tag := range alt.Tags {
 		s.produced[tag] = true
 		for _, scope := range s.scopes {
@@ -173,6 +211,26 @@ func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formNa
 		return s.expandFormDefault(out, name, r, alt, form.Default, depth)
 	}
 	return s.expandTemplate(out, name, tpl, depth, "")
+}
+
+func (s *genState) snapshot() genSnapshot {
+	return genSnapshot{
+		saved:     maps.Clone(s.saved),
+		available: s.available,
+		produced:  maps.Clone(s.produced),
+		scopes:    cloneScopeStack(s.scopes),
+	}
+}
+
+func (s *genState) restore(snapshot genSnapshot) {
+	s.saved = snapshot.saved
+	s.available = snapshot.available
+	s.produced = snapshot.produced
+	restoreScopeStack(s.scopes, snapshot.scopes)
+}
+
+func isBacktrackable(err error) bool {
+	return errors.Is(err, errNoEligibleAlternatives) || errors.Is(err, errRequiredTagsMissing)
 }
 
 // expandFormDefault expands a form-default template. SelfRef inside it
@@ -276,46 +334,55 @@ func (s *genState) expandRuleRef(caller string, ref RuleRef, depth int) (string,
 		s.produced = produced
 		restoreScopeStack(s.scopes, scopes)
 	}
-	return "", fmt.Errorf("grammar: rule %q could not produce required tags after %d attempts", ref.Rule, defaultRequiredTagAttempts)
+	return "", fmt.Errorf("grammar: rule %q could not produce required tags after %d attempts: %w", ref.Rule, defaultRequiredTagAttempts, errRequiredTagsMissing)
 }
 
-// pickAlternative selects one alternative from r weighted by the
-// alternatives' Weight fields. Weight 0 is normalised to 1 so a
-// hand-built grammar that forgets to set Weight still works; Parse
-// rejects an explicit weight=0 separately.
-func (s *genState) pickAlternative(name string, r *Rule) (*Alternative, error) {
-	if len(r.Alternatives) == 0 {
-		return nil, fmt.Errorf("rule %q has no alternatives", name)
-	}
-	var total uint
+// eligibleAlternatives returns the alternatives whose tag prerequisites
+// are satisfied by the current generation context.
+func (s *genState) eligibleAlternatives(r *Rule) []int {
+	eligible := make([]int, 0, len(r.Alternatives))
 	for i := range r.Alternatives {
-		if !s.tagsAvailable(r.Alternatives[i].Tags) {
-			continue
+		if s.tagsAvailable(r.Alternatives[i].Tags) {
+			eligible = append(eligible, i)
 		}
+	}
+	return eligible
+}
+
+// pickAlternativeIndex selects one candidate weighted by the alternatives'
+// Weight fields. Weight 0 is normalised to 1 so a hand-built grammar that
+// forgets to set Weight still works; Parse rejects an explicit weight=0
+// separately.
+func (s *genState) pickAlternativeIndex(r *Rule, candidates []int) int {
+	var total uint
+	for _, i := range candidates {
 		w := r.Alternatives[i].Weight
 		if w == 0 {
 			w = 1
 		}
 		total += w
 	}
-	if total == 0 {
-		return nil, fmt.Errorf("rule %q has no eligible alternatives for available tags", name)
-	}
 	pick := uint(s.rng.Int63n(int64(total)))
-	for i := range r.Alternatives {
-		if !s.tagsAvailable(r.Alternatives[i].Tags) {
-			continue
-		}
+	for _, i := range candidates {
 		w := r.Alternatives[i].Weight
 		if w == 0 {
 			w = 1
 		}
 		if pick < w {
-			return &r.Alternatives[i], nil
+			return i
 		}
 		pick -= w
 	}
-	return nil, fmt.Errorf("internal: weighted pick fell through (rule %q, total %d)", name, total)
+	panic(fmt.Sprintf("internal: weighted pick fell through (total %d)", total))
+}
+
+func removeAlternativeIndex(candidates []int, picked int) []int {
+	for i, candidate := range candidates {
+		if candidate == picked {
+			return append(candidates[:i], candidates[i+1:]...)
+		}
+	}
+	return candidates
 }
 
 func (s *genState) tagsAvailable(tags []string) bool {
