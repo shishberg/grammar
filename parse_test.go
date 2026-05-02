@@ -213,7 +213,7 @@ func TestParseRuleRefTagOptions(t *testing.T) {
 
 rule x
   forms: default
-  {a|tags=fruit-🍎,mood/happy} {a|required=rare!} {a:plural|tags=fruit-🍎 as N} {*N}
+  {a|tags=fruit-🍎,mood/happy,-spicy} {a|required=rare!} {a:plural|tags=fruit-🍎 as N} {*N}
 `
 	g, err := Parse(src)
 	if err != nil {
@@ -221,7 +221,7 @@ rule x
 	}
 	gotTpl := g.rules["x"].Alternatives[0].Forms["default"]
 	wantTpl := Template{
-		RuleRef{Rule: "a", Tags: []string{"fruit-🍎", "mood/happy"}},
+		RuleRef{Rule: "a", Tags: []string{"fruit-🍎", "mood/happy", "-spicy"}},
 		Literal{Text: " "},
 		RuleRef{Rule: "a", Required: []string{"rare!"}},
 		Literal{Text: " "},
@@ -252,6 +252,23 @@ func TestParseRuleRefTagOptionsRejectInvalidTags(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "invalid tag") && !strings.Contains(err.Error(), "tag list is empty") {
 			t.Fatalf("err = %v, want invalid tag or empty tag list", err)
+		}
+	}
+}
+
+func TestParseRuleRefTagOptionsRejectInvalidRemoval(t *testing.T) {
+	tests := []string{
+		"{a|tags=-}",
+		"{a|required=-fruit}",
+	}
+	for _, body := range tests {
+		src := "rule x\n  " + body + "\n"
+		_, err := Parse(src)
+		if err == nil {
+			t.Fatalf("Parse(%q) returned nil error", body)
+		}
+		if !strings.Contains(err.Error(), "invalid tag") {
+			t.Fatalf("err = %v, want invalid tag", err)
 		}
 	}
 }

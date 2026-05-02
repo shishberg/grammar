@@ -179,6 +179,9 @@ recall    = "*" SAVE-NAME
 - `{rule|tags=a,b}` expands the rule with `a` and `b` available only
   inside that reference and any nested references it expands. The tags
   do not leak to later tokens in the caller's template.
+- `{rule|tags=-a}` expands the rule with `a` removed from the available
+  tags inside that reference. The removal does not leak to later tokens
+  in the caller's template.
 - `{rule|required=a}` retries that referenced expansion until it
   produces tag `a`, or returns an error after the retry cap. Required
   tags are also available while expanding that reference.

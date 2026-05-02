@@ -409,6 +409,10 @@ func withAvailableTags(base map[string]bool, tags, required []string) map[string
 	}
 	out := maps.Clone(base)
 	for _, tag := range tags {
+		if isTagRemoval(tag) {
+			delete(out, tag[1:])
+			continue
+		}
 		out[tag] = true
 	}
 	for _, tag := range required {

@@ -535,14 +535,18 @@ func parseRefOptions(options string, line, col int) ([]string, []string, error) 
 		if !ok {
 			return nil, nil, parseErrorf(line, cursor, "rule reference option %q needs =", option)
 		}
-		parsed, err := parseRefTagList(raw, line, cursor+len(name)+1)
-		if err != nil {
-			return nil, nil, err
-		}
 		switch name {
 		case "tags":
+			parsed, err := parseRefTagList(raw, line, cursor+len(name)+1, true)
+			if err != nil {
+				return nil, nil, err
+			}
 			tags = append(tags, parsed...)
 		case "required":
+			parsed, err := parseRefTagList(raw, line, cursor+len(name)+1, false)
+			if err != nil {
+				return nil, nil, err
+			}
 			required = append(required, parsed...)
 		default:
 			return nil, nil, parseErrorf(line, cursor, "unknown rule reference option %q", name)
@@ -552,14 +556,14 @@ func parseRefOptions(options string, line, col int) ([]string, []string, error) 
 	return tags, required, nil
 }
 
-func parseRefTagList(raw string, line, col int) ([]string, error) {
+func parseRefTagList(raw string, line, col int, allowRemoval bool) ([]string, error) {
 	if raw == "" {
 		return nil, parseErrorf(line, col, "tag list is empty")
 	}
 	parts := strings.Split(raw, ",")
 	tags := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if !isTagName(part) {
+		if err := validateReferenceTags([]string{part}, allowRemoval); err != nil {
 			return nil, parseErrorf(line, col, "invalid tag %q (%s)", part, invalidTagDescription)
 		}
 		tags = append(tags, part)

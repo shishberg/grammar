@@ -221,10 +221,10 @@ func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
 }
 
 func validateRuleRefTags(ref RuleRef) error {
-	if err := validateTags(ref.Tags); err != nil {
+	if err := validateReferenceTags(ref.Tags, true); err != nil {
 		return err
 	}
-	return validateTags(ref.Required)
+	return validateReferenceTags(ref.Required, false)
 }
 
 func validateTemplateTagOptions(tpl Template) error {
@@ -233,11 +233,23 @@ func validateTemplateTagOptions(tpl Template) error {
 		if !ok {
 			continue
 		}
-		if err := validateTags(ref.Tags); err != nil {
+		if err := validateRuleRefTags(ref); err != nil {
 			return err
 		}
-		if err := validateTags(ref.Required); err != nil {
-			return err
+	}
+	return nil
+}
+
+func validateReferenceTags(tags []string, allowRemoval bool) error {
+	for _, tag := range tags {
+		if isTagRemoval(tag) {
+			if !allowRemoval || !isTagName(tag[1:]) {
+				return fmt.Errorf("invalid tag %q (%s)", tag, invalidTagDescription)
+			}
+			continue
+		}
+		if !isTagName(tag) {
+			return fmt.Errorf("invalid tag %q (%s)", tag, invalidTagDescription)
 		}
 	}
 	return nil
@@ -317,6 +329,10 @@ func isTagName(s string) bool {
 		}
 	}
 	return true
+}
+
+func isTagRemoval(s string) bool {
+	return len(s) > 0 && s[0] == '-'
 }
 
 // formSchemesMatch reports whether two Forms slices declare the same

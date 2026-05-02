@@ -114,9 +114,12 @@ Constraints not expressible in EBNF:
   rule. (Checked by `Validate` once the full grammar is assembled, or
   at generation time if `Validate` was skipped.)
 - A `tags=` reference option makes those tags available only while
-  expanding that reference. A `required=` reference option also makes
-  those tags available, and the referenced expansion must produce them
-  before the retry cap is reached.
+  expanding that reference. A tag item with a leading `-` in a `tags=`
+  reference option removes that tag from the reference's available tags;
+  `-` by itself is rejected.
+- A `required=` reference option also makes those tags available, and
+  the referenced expansion must produce them before the retry cap is
+  reached. `required=` does not accept leading-`-` removal items.
 - A backslash followed by any byte *other* than `{`, `}`, `#`, `\` is
   *not* an escape: the backslash and the following byte are both
   literal. A trailing backslash at end of line is also literal.

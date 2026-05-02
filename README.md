@@ -95,11 +95,13 @@ Rule references can also add scoped tags:
 ```
 rule dessert
   pie with {snack|tags=fruit}
+  plain: {snack|tags=-fruit}
   prize: {snack|required=fruit}
 ```
 
-`tags=` applies only inside that reference. `required=` retries the
-referenced expansion until it produces the tag.
+`tags=` applies only inside that reference. Prefix a tag with `-` there
+to remove it from that reference's available tags. `required=` retries
+the referenced expansion until it produces the tag.
 
 ## Command-line tool
 

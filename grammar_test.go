@@ -59,7 +59,7 @@ func TestAddRuleAllowsDelimiterFreeAlternativeTags(t *testing.T) {
 	err := g.AddRule("snack", &Rule{
 		Forms: []FormSpec{{Name: "default"}},
 		Alternatives: []Alternative{
-			{Tags: []string{"fruit-🍎", "mood/happy"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			{Tags: []string{"fruit-🍎", "mood/happy", "-fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
 		},
 	})
 	if err != nil {
@@ -83,6 +83,32 @@ func TestAddRuleValidatesRuleRefTags(t *testing.T) {
 		Forms: []FormSpec{{Name: "default"}},
 		Alternatives: []Alternative{
 			{Forms: map[string]Template{"default": {RuleRef{Rule: "snack", Required: []string{"bad=tag"}}}}},
+		},
+	})
+	if err == nil {
+		t.Fatal("AddRule returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
+	}
+
+	err = g.AddRule("plate", &Rule{
+		Forms: []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{
+			{Forms: map[string]Template{"default": {RuleRef{Rule: "snack", Tags: []string{"-"}}}}},
+		},
+	})
+	if err == nil {
+		t.Fatal("AddRule returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
+	}
+
+	err = g.AddRule("box", &Rule{
+		Forms: []FormSpec{{Name: "default"}},
+		Alternatives: []Alternative{
+			{Forms: map[string]Template{"default": {RuleRef{Rule: "snack", Required: []string{"-fruit"}}}}},
 		},
 	})
 	if err == nil {

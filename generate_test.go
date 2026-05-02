@@ -303,6 +303,88 @@ func TestGenerateRuleRefTagsAreScopedToReference(t *testing.T) {
 	}
 }
 
+func TestGenerateRuleRefTagRemovalIsScopedToReference(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"word": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+				{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "bread"}}}},
+			},
+		},
+		"fruit": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "pear"}}}},
+			},
+		},
+		"sentence": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {
+					RuleRef{Rule: "word", Tags: []string{"-fruit"}},
+					Literal{Text: " then "},
+					RuleRef{Rule: "fruit"},
+				},
+			}}},
+		},
+	}}
+	out, err := g.Generate("sentence", newRand(1), WithTags("fruit"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "bread then pear" {
+		t.Fatalf("out = %q, want bread then pear", out)
+	}
+}
+
+func TestGenerateRuleRefTagsCanAddAndRemoveAvailability(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"filling": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+				{Weight: 1, Tags: []string{"spicy"}, Forms: map[string]Template{"default": {Literal{Text: "pepper"}}}},
+			},
+		},
+		"meal": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {RuleRef{Rule: "filling", Tags: []string{"fruit", "-spicy"}}},
+			}}},
+		},
+	}}
+	out, err := g.Generate("meal", newRand(1), WithTags("spicy"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "apple" {
+		t.Fatalf("out = %q, want apple", out)
+	}
+}
+
+func TestGenerateRejectsInvalidRuleRefTagRemoval(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"thing": {
+			Forms:        []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "thing"}}}}},
+		},
+		"sentence": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {RuleRef{Rule: "thing", Tags: []string{"-"}}},
+			}}},
+		},
+	}}
+	_, err := g.Generate("sentence", newRand(1))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
+	}
+}
+
 func TestGenerateRuleRefTagsExposeNestedAlternativesAndPropagateProducedTags(t *testing.T) {
 	g := &Grammar{rules: map[string]*Rule{
 		"filling": {
