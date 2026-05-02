@@ -88,6 +88,17 @@ generations until the finished expansion produced the required tag, then
 returns an error if it still has not after the retry cap. Use
 `GenerateWithOptions` when combining tag options with post-processors.
 
+Rule references can also add scoped tags:
+
+```
+rule dessert
+  pie with {snack|tags=fruit}
+  prize: {snack|required=fruit}
+```
+
+`tags=` applies only inside that reference. `required=` retries the
+referenced expansion until it produces the tag.
+
 ## Command-line tool
 
 `cmd/grammar` reads a directory of `.grammar` files, merges them, and

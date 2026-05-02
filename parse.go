@@ -481,7 +481,7 @@ func parseTemplate(s string, line, col int, inFormDefault bool) (Template, error
 
 // parseRefBody parses the contents between { and } and returns the
 // matching Token. It handles SelfRef ({}), Recall ({*NAME}), and
-// RuleRef ({rule[:form][ as NAME]}).
+// RuleRef ({rule[:form][|tags=...][|required=...][ as NAME]}).
 func parseRefBody(body string, line, col int, inFormDefault bool) (Token, error) {
 	if body == "" {
 		if !inFormDefault {
@@ -507,6 +507,15 @@ func parseRefBody(body string, line, col int, inFormDefault bool) (Token, error)
 			return nil, parseErrorf(line, col, "invalid save name %q (must match [A-Z][A-Z0-9_]*)", save)
 		}
 	}
+	base, options, hasOptions := strings.Cut(rest, "|")
+	if hasOptions && options == "" {
+		return nil, parseErrorf(line, col+len(base)+1, "empty rule reference option")
+	}
+	tags, required, err := parseRefOptions(options, line, col+len(base)+1)
+	if err != nil {
+		return nil, err
+	}
+	rest = base
 	ruleName, formName, hasForm := strings.Cut(rest, ":")
 	if hasForm && !isFormName(formName) {
 		return nil, parseErrorf(line, col, "invalid form name %q in rule reference", formName)
@@ -514,7 +523,54 @@ func parseRefBody(body string, line, col int, inFormDefault bool) (Token, error)
 	if !isRuleName(ruleName) {
 		return nil, parseErrorf(line, col, "invalid rule name %q in reference", ruleName)
 	}
-	return RuleRef{Rule: ruleName, Form: formName, Save: save}, nil
+	return RuleRef{Rule: ruleName, Form: formName, Save: save, Tags: tags, Required: required}, nil
+}
+
+func parseRefOptions(options string, line, col int) ([]string, []string, error) {
+	if options == "" {
+		return nil, nil, nil
+	}
+	var tags []string
+	var required []string
+	cursor := col
+	for option := range strings.SplitSeq(options, "|") {
+		if option == "" {
+			return nil, nil, parseErrorf(line, cursor, "empty rule reference option")
+		}
+		name, raw, ok := strings.Cut(option, "=")
+		if !ok {
+			return nil, nil, parseErrorf(line, cursor, "rule reference option %q needs =", option)
+		}
+		parsed, err := parseRefTagList(raw, line, cursor+len(name)+1)
+		if err != nil {
+			return nil, nil, err
+		}
+		switch name {
+		case "tags":
+			tags = append(tags, parsed...)
+		case "required":
+			required = append(required, parsed...)
+		default:
+			return nil, nil, parseErrorf(line, cursor, "unknown rule reference option %q", name)
+		}
+		cursor += len(option) + 1
+	}
+	return tags, required, nil
+}
+
+func parseRefTagList(raw string, line, col int) ([]string, error) {
+	if raw == "" {
+		return nil, parseErrorf(line, col, "tag list is empty")
+	}
+	parts := strings.Split(raw, ",")
+	tags := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if !isRuleName(part) {
+			return nil, parseErrorf(line, col, "invalid tag %q (must match [a-z][a-z0-9_]*)", part)
+		}
+		tags = append(tags, part)
+	}
+	return tags, nil
 }
 
 // findAsKeyword finds " as " (or "\tas\t", etc) in a ref body. The spec

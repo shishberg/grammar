@@ -206,6 +206,78 @@ rule x
 	}
 }
 
+func TestParseRuleRefTagOptions(t *testing.T) {
+	src := `rule a
+  forms: default, plural={}s
+  cat
+
+rule x
+  forms: default
+  {a|tags=fruit,food} {a|required=rare} {a:plural|tags=fruit as N} {*N}
+`
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	gotTpl := g.rules["x"].Alternatives[0].Forms["default"]
+	wantTpl := Template{
+		RuleRef{Rule: "a", Tags: []string{"fruit", "food"}},
+		Literal{Text: " "},
+		RuleRef{Rule: "a", Required: []string{"rare"}},
+		Literal{Text: " "},
+		RuleRef{Rule: "a", Form: "plural", Save: "N", Tags: []string{"fruit"}},
+		Literal{Text: " "},
+		Recall{Name: "N"},
+	}
+	if !reflect.DeepEqual(gotTpl, wantTpl) {
+		t.Errorf("template = %#v\nwant      %#v", gotTpl, wantTpl)
+	}
+}
+
+func TestParseRuleRefTagOptionsRejectInvalidTags(t *testing.T) {
+	src := `rule x
+  {a|tags=Fruit}
+`
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("expected error for invalid tag")
+	}
+	if !strings.Contains(err.Error(), "invalid tag") {
+		t.Fatalf("err = %v, want invalid tag", err)
+	}
+}
+
+func TestParseRuleRefTagOptionsRejectEmptyOption(t *testing.T) {
+	src := `rule x
+  {a|}
+`
+	_, err := Parse(src)
+	if err == nil {
+		t.Fatal("expected error for empty rule reference option")
+	}
+	if !strings.Contains(err.Error(), "empty rule reference option") {
+		t.Fatalf("err = %v, want empty rule reference option", err)
+	}
+}
+
+func TestParseRuleRefDuplicateTagOptionsMerge(t *testing.T) {
+	src := `rule a
+  cat
+
+rule x
+  {a|tags=fruit|tags=food|required=rare|required=shiny}
+`
+	g, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	got := g.rules["x"].Alternatives[0].Forms["default"][0]
+	want := RuleRef{Rule: "a", Tags: []string{"fruit", "food"}, Required: []string{"rare", "shiny"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ref = %#v, want %#v", got, want)
+	}
+}
+
 func TestParseHashInsideBraceIsLiteral(t *testing.T) {
 	// A '#' inside a {...} ref body is part of the body, not a comment
 	// start. The parser will then reject it as an invalid rule name,

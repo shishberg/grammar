@@ -65,6 +65,16 @@ func (g *Grammar) AddRule(name string, r *Rule) error {
 		if err := validateTags(alt.Tags); err != nil {
 			return fmt.Errorf("rule %q alternative %d: %w", name, i, err)
 		}
+		for _, tpl := range alt.Forms {
+			if err := validateTemplateTagOptions(tpl); err != nil {
+				return fmt.Errorf("rule %q alternative %d: %w", name, i, err)
+			}
+		}
+	}
+	for _, fs := range r.Forms {
+		if err := validateTemplateTagOptions(fs.Default); err != nil {
+			return fmt.Errorf("rule %q form %q: %w", name, fs.Name, err)
+		}
 	}
 	g.rules[name] = r
 	return nil
@@ -115,11 +125,17 @@ type Literal struct {
 
 // RuleRef expands the named rule. Form selects an inflectional form
 // (empty means default). Save, if non-empty, stores the expansion under
-// that name for later Recall in the same Generate call.
+// that name for later Recall in the same Generate call. Tags makes
+// tagged alternatives eligible while expanding this reference only.
+// Required behaves like WithRequiredTags for this reference: the tags
+// are available during the expansion, and the expansion is retried until
+// it produces them or the retry cap is reached.
 type RuleRef struct {
-	Rule string
-	Form string
-	Save string
+	Rule     string
+	Form     string
+	Save     string
+	Tags     []string
+	Required []string
 }
 
 // Recall substitutes a previously saved expansion by name.
@@ -183,6 +199,9 @@ func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
 		if !exists {
 			return fmt.Errorf("rule %q references %w %q", ruleName, ErrUndefinedRule, ref.Rule)
 		}
+		if err := validateRuleRefTags(ref); err != nil {
+			return fmt.Errorf("rule %q reference to %q: %w", ruleName, ref.Rule, err)
+		}
 		if ref.Form == "" {
 			continue
 		}
@@ -195,6 +214,29 @@ func (g *Grammar) validateTemplateRefs(ruleName string, tpl Template) error {
 		}
 		if !found {
 			return fmt.Errorf("rule %q references %w %q on rule %q", ruleName, ErrUnknownForm, ref.Form, ref.Rule)
+		}
+	}
+	return nil
+}
+
+func validateRuleRefTags(ref RuleRef) error {
+	if err := validateTags(ref.Tags); err != nil {
+		return err
+	}
+	return validateTags(ref.Required)
+}
+
+func validateTemplateTagOptions(tpl Template) error {
+	for _, tok := range tpl {
+		ref, ok := tok.(RuleRef)
+		if !ok {
+			continue
+		}
+		if err := validateTags(ref.Tags); err != nil {
+			return err
+		}
+		if err := validateTags(ref.Required); err != nil {
+			return err
 		}
 	}
 	return nil

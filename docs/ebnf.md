@@ -95,7 +95,10 @@ escape       = "\{" | "\}" | "\#" | "\\" ;
 reference    = "{" , ref-body , "}" ;
 ref-body     = self-ref | rule-ref | recall ;
 self-ref     = (* empty *) ;
-rule-ref     = rule-name , [ ":" , form-name ] , [ wsp+ , "as" , wsp+ , save-name ] ;
+rule-ref     = rule-name , [ ":" , form-name ] , { "|" , ref-option } ,
+               [ wsp+ , "as" , wsp+ , save-name ] ;
+ref-option   = ( "tags" | "required" ) , "=" , tag-list ;
+tag-list     = rule-name , { "," , rule-name } ;
 recall       = "*" , save-name ;
 ```
 
@@ -107,6 +110,10 @@ Constraints not expressible in EBNF:
 - `rule-ref`'s `form-name` MUST name a form declared on the referenced
   rule. (Checked by `Validate` once the full grammar is assembled, or
   at generation time if `Validate` was skipped.)
+- A `tags=` reference option makes those tags available only while
+  expanding that reference. A `required=` reference option also makes
+  those tags available, and the referenced expansion must produce them
+  before the retry cap is reached.
 - A backslash followed by any byte *other* than `{`, `}`, `#`, `\` is
   *not* an escape: the backslash and the following byte are both
   literal. A trailing backslash at end of line is also literal.

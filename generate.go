@@ -138,6 +138,7 @@ type genState struct {
 	saved     map[string]string
 	available map[string]bool
 	produced  map[string]bool
+	scopes    []map[string]bool
 	max       int
 }
 
@@ -158,6 +159,9 @@ func (s *genState) expandRule(out *strings.Builder, name string, r *Rule, formNa
 	}
 	for _, tag := range alt.Tags {
 		s.produced[tag] = true
+		for _, scope := range s.scopes {
+			scope[tag] = true
+		}
 	}
 	// SelfRef inside form.Default substitutes the alternative's
 	// default-form expansion; the form-default branch handles that.
@@ -197,15 +201,10 @@ func (s *genState) expandTemplate(out *strings.Builder, name string, tpl Templat
 		case Literal:
 			out.WriteString(t.Text)
 		case RuleRef:
-			sub, ok := s.grammar.rules[t.Rule]
-			if !ok {
-				return fmt.Errorf("rule %q references %w %q", name, ErrUndefinedRule, t.Rule)
-			}
-			var subBuf strings.Builder
-			if err := s.expandRule(&subBuf, t.Rule, sub, t.Form, depth+1); err != nil {
+			expansion, err := s.expandRuleRef(name, t, depth)
+			if err != nil {
 				return err
 			}
-			expansion := subBuf.String()
 			if t.Save != "" {
 				s.saved[t.Save] = expansion
 			}
@@ -229,6 +228,55 @@ func (s *genState) expandTemplate(out *strings.Builder, name string, tpl Templat
 		}
 	}
 	return nil
+}
+
+func (s *genState) expandRuleRef(caller string, ref RuleRef, depth int) (string, error) {
+	if err := validateRuleRefTags(ref); err != nil {
+		return "", fmt.Errorf("rule %q reference to %q: %w", caller, ref.Rule, err)
+	}
+	sub, ok := s.grammar.rules[ref.Rule]
+	if !ok {
+		return "", fmt.Errorf("rule %q references %w %q", caller, ErrUndefinedRule, ref.Rule)
+	}
+	if len(ref.Required) == 0 {
+		var subBuf strings.Builder
+		available := s.available
+		s.available = withAvailableTags(s.available, ref.Tags, nil)
+		err := s.expandRule(&subBuf, ref.Rule, sub, ref.Form, depth+1)
+		s.available = available
+		if err != nil {
+			return "", err
+		}
+		return subBuf.String(), nil
+	}
+
+	available := withAvailableTags(s.available, ref.Tags, ref.Required)
+	for attempt := 0; attempt < defaultRequiredTagAttempts; attempt++ {
+		saved := maps.Clone(s.saved)
+		produced := maps.Clone(s.produced)
+		scopes := cloneScopeStack(s.scopes)
+		previousAvailable := s.available
+		scope := map[string]bool{}
+		s.available = available
+		s.scopes = append(s.scopes, scope)
+		var subBuf strings.Builder
+		err := s.expandRule(&subBuf, ref.Rule, sub, ref.Form, depth+1)
+		s.scopes = s.scopes[:len(s.scopes)-1]
+		s.available = previousAvailable
+		if err != nil {
+			s.saved = saved
+			s.produced = produced
+			restoreScopeStack(s.scopes, scopes)
+			return "", err
+		}
+		if hasAllTags(scope, tagsToSet(ref.Required)) {
+			return subBuf.String(), nil
+		}
+		s.saved = saved
+		s.produced = produced
+		restoreScopeStack(s.scopes, scopes)
+	}
+	return "", fmt.Errorf("grammar: rule %q could not produce required tags after %d attempts", ref.Rule, defaultRequiredTagAttempts)
 }
 
 // pickAlternative selects one alternative from r weighted by the
@@ -286,6 +334,45 @@ func hasAllTags(produced, required map[string]bool) bool {
 		}
 	}
 	return true
+}
+
+func withAvailableTags(base map[string]bool, tags, required []string) map[string]bool {
+	if len(tags) == 0 && len(required) == 0 {
+		return base
+	}
+	out := maps.Clone(base)
+	for _, tag := range tags {
+		out[tag] = true
+	}
+	for _, tag := range required {
+		out[tag] = true
+	}
+	return out
+}
+
+func tagsToSet(tags []string) map[string]bool {
+	out := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		out[tag] = true
+	}
+	return out
+}
+
+func cloneScopeStack(scopes []map[string]bool) []map[string]bool {
+	out := make([]map[string]bool, len(scopes))
+	for i, scope := range scopes {
+		out[i] = maps.Clone(scope)
+	}
+	return out
+}
+
+func restoreScopeStack(scopes, snapshots []map[string]bool) {
+	for i, snapshot := range snapshots {
+		clear(scopes[i])
+		for tag, produced := range snapshot {
+			scopes[i][tag] = produced
+		}
+	}
 }
 
 func validateTagSet(tags map[string]bool) error {

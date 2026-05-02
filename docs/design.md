@@ -41,9 +41,11 @@ type Template []Token
 type Token interface{ token() }
 type Literal struct{ Text string }
 type RuleRef struct {
-    Rule string  // name of the rule to expand
-    Form string  // "" = default form
-    Save string  // "" = don't save; uppercase name = save under that name
+    Rule     string    // name of the rule to expand
+    Form     string    // "" = default form
+    Save     string    // "" = don't save; uppercase name = save under that name
+    Tags     []string  // tags available only inside this reference
+    Required []string  // tags this reference must produce
 }
 type Recall struct{ Name string }
 type SelfRef struct{}            // only legal inside a FormSpec.Default
@@ -166,16 +168,23 @@ A template is a sequence of literal characters and `{...}` references.
 ref       = "{" ref-body "}"
 ref-body  = self-ref | rule-ref | recall
 self-ref  = (empty)              // legal only in a form-default template
-rule-ref  = NAME [":" FORM-NAME] [ws "as" ws SAVE-NAME]
+rule-ref  = NAME [":" FORM-NAME] { "|" REF-OPTION } [ws "as" ws SAVE-NAME]
 recall    = "*" SAVE-NAME
 ```
 
 - `{rule}` expands the named rule's default form.
 - `{rule:form}` expands a specific form. Referencing a form the rule
   doesn't declare is a parse error.
+- `{rule|tags=a,b}` expands the rule with `a` and `b` available only
+  inside that reference and any nested references it expands. The tags
+  do not leak to later tokens in the caller's template.
+- `{rule|required=a}` retries that referenced expansion until it
+  produces tag `a`, or returns an error after the retry cap. Required
+  tags are also available while expanding that reference.
 - `{rule as NAME}` expands and saves the result under `NAME` for
   later recall in the same generation.
-- `{rule:form as NAME}` combines the two.
+- `{rule:form|tags=a|required=b as NAME}` combines form, reference
+  options, and saving. Reference options must appear before `as NAME`.
 - `{*NAME}` recalls the saved value of `NAME`.
 
 Identifier rules:

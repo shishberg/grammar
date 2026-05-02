@@ -275,6 +275,166 @@ func TestGenerateRuleRefNonDefaultForm(t *testing.T) {
 	}
 }
 
+func TestGenerateRuleRefTagsAreScopedToReference(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"word": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"sentence": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {
+					RuleRef{Rule: "word", Tags: []string{"fruit"}},
+					Literal{Text: " then "},
+					RuleRef{Rule: "word"},
+				},
+			}}},
+		},
+	}}
+	_, err := g.Generate("sentence", newRand(1))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "word") || !strings.Contains(err.Error(), "tags") {
+		t.Fatalf("err = %v, want sibling reference to lack fruit tag", err)
+	}
+}
+
+func TestGenerateRuleRefTagsExposeNestedAlternativesAndPropagateProducedTags(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"filling": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"meal": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {Literal{Text: "pie with "}, RuleRef{Rule: "filling", Tags: []string{"fruit"}}},
+			}}},
+		},
+	}}
+	out, err := g.Generate("meal", newRand(1), WithRequiredTags("fruit"))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "pie with apple" {
+		t.Fatalf("out = %q, want pie with apple", out)
+	}
+}
+
+func TestGenerateRuleRefRequiredRetriesNestedExpansion(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"prize": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 50, Forms: map[string]Template{"default": {Literal{Text: "stone"}}}},
+				{Weight: 1, Tags: []string{"rare"}, Forms: map[string]Template{"default": {Literal{Text: "gem"}}}},
+			},
+		},
+		"box": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {Literal{Text: "box: "}, RuleRef{Rule: "prize", Required: []string{"rare"}}},
+			}}},
+		},
+	}}
+	out, err := g.Generate("box", newRand(1))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "box: gem" {
+		t.Fatalf("out = %q, want box: gem", out)
+	}
+}
+
+func TestGenerateRuleRefRequiredErrorsWhenNotProduced(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"prize": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Forms: map[string]Template{"default": {Literal{Text: "stone"}}}},
+			},
+		},
+		"box": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {Literal{Text: "box: "}, RuleRef{Rule: "prize", Required: []string{"rare"}}},
+			}}},
+		},
+	}}
+	_, err := g.Generate("box", newRand(1))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "required tags") || !strings.Contains(err.Error(), "prize") {
+		t.Fatalf("err = %v, want required tags on prize", err)
+	}
+}
+
+func TestGenerateRuleRefRequiredCountsTagsProducedInsideReference(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"fruit": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"fruit"}, Forms: map[string]Template{"default": {Literal{Text: "apple"}}}},
+			},
+		},
+		"meal": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {
+					RuleRef{Rule: "fruit", Tags: []string{"fruit"}},
+					Literal{Text: " and "},
+					RuleRef{Rule: "fruit", Required: []string{"fruit"}},
+				},
+			}}},
+		},
+	}}
+	out, err := g.Generate("meal", newRand(1))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out != "apple and apple" {
+		t.Fatalf("out = %q, want apple and apple", out)
+	}
+}
+
+func TestGenerateNestedRuleRefRequiredDoesNotLeakDiscardedAttemptTags(t *testing.T) {
+	g := &Grammar{rules: map[string]*Rule{
+		"item": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{
+				{Weight: 1, Tags: []string{"red"}, Forms: map[string]Template{"default": {Literal{Text: "red stone"}}}},
+				{Weight: 1, Tags: []string{"rare"}, Forms: map[string]Template{"default": {Literal{Text: "gem"}}}},
+			},
+		},
+		"wrapper": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {RuleRef{Rule: "item", Required: []string{"rare"}}},
+			}}},
+		},
+		"box": {
+			Forms: []FormSpec{{Name: "default"}},
+			Alternatives: []Alternative{{Weight: 1, Forms: map[string]Template{
+				"default": {RuleRef{Rule: "wrapper", Required: []string{"red"}}},
+			}}},
+		},
+	}}
+	_, err := g.Generate("box", newRand(2))
+	if err == nil {
+		t.Fatal("Generate returned nil error")
+	}
+	if !strings.Contains(err.Error(), "wrapper") || !strings.Contains(err.Error(), "required tags") {
+		t.Fatalf("err = %v, want wrapper required-tags failure", err)
+	}
+}
+
 func TestGenerateSaveRecall(t *testing.T) {
 	g := &Grammar{rules: map[string]*Rule{
 		"animal": {
